@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder</title>
+<title>Acreage Finder v1.1</title>
 <style>
 :root{
   color-scheme:dark;
@@ -20,7 +20,12 @@ body{
 }
 main{max-width:760px;margin:auto;padding:calc(18px + env(safe-area-inset-top)) 16px calc(26px + env(safe-area-inset-bottom))}
 h1{font-size:25px;margin:0 0 3px}
-.subtitle{color:var(--muted);font-size:14px;margin-bottom:16px}
+.subtitle{color:var(--muted);font-size:14px;margin-bottom:14px}
+.version{font-size:11px;color:var(--muted);margin-left:7px;font-weight:600}
+.mode-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.mode-tabs button{min-height:44px;background:#10233a;border:1px solid #20344e}
+.mode-tabs button.active{background:#1479bd;border-color:#2a8dcc}
+.view{display:none}.view.active{display:block}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
 .card{background:rgba(13,25,41,.92);border:1px solid #20344e;border-radius:17px;padding:13px}
 .value{font-size:27px;font-weight:750;letter-spacing:-.03em;line-height:1.05}
@@ -50,66 +55,168 @@ details{margin-top:12px;background:#0d1929;border:1px solid #20344e;border-radiu
 summary{font-weight:700;cursor:pointer}
 small, .help{color:var(--muted);line-height:1.45}
 .pointcount{font-variant-numeric:tabular-nums}
+
+/* Coordinate finder */
+.finder-panel{background:rgba(13,25,41,.92);border:1px solid #20344e;border-radius:19px;padding:14px}
+.input-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em}
+.field input{
+  width:100%;min-height:50px;border-radius:13px;border:1px solid #2a415d;background:#081523;color:var(--text);
+  padding:0 12px;font-size:17px;font-variant-numeric:tabular-nums;outline:none;
+}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(89,183,255,.12)}
+.paste-row{margin-top:10px}
+.paste-row input{width:100%;min-height:48px;border-radius:13px;border:1px solid #2a415d;background:#081523;color:var(--text);padding:0 12px;font-size:16px}
+.finder-controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:11px}
+.finder-controls .wide{grid-column:1/-1}
+.nav-card{
+  margin-top:12px;border:1px solid #20344e;border-radius:22px;padding:18px 14px 15px;text-align:center;
+  background:radial-gradient(circle at 50% 38%,rgba(89,183,255,.10),transparent 34%),linear-gradient(#0a1726,#0b1828);
+}
+.distance-big{font-size:47px;font-weight:800;letter-spacing:-.04em;line-height:1}
+.distance-unit{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-top:5px}
+.compass-wrap{position:relative;width:230px;height:230px;margin:16px auto 10px;border-radius:50%;border:2px solid #29435f;background:radial-gradient(circle,#10243a 0,#091625 64%,#07111e 100%);box-shadow:inset 0 0 0 8px rgba(255,255,255,.015)}
+.compass-wrap::before{content:"N";position:absolute;left:50%;top:8px;transform:translateX(-50%);font-size:13px;color:var(--muted);font-weight:800}
+.compass-wrap::after{content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;border-radius:50%;transform:translate(-50%,-50%);background:white;box-shadow:0 0 0 5px rgba(255,255,255,.10)}
+.arrow{
+  position:absolute;left:50%;top:50%;width:0;height:0;transform:translate(-50%,-50%) rotate(0deg);
+  transform-origin:50% 50%;transition:transform .14s linear;
+}
+.arrow-shaft{position:absolute;width:12px;height:82px;background:linear-gradient(#8ed4ff,#59b7ff);left:-6px;top:-72px;border-radius:7px}
+.arrow-head{position:absolute;width:0;height:0;border-left:23px solid transparent;border-right:23px solid transparent;border-bottom:38px solid #79c7ff;left:-23px;top:-101px;filter:drop-shadow(0 0 8px rgba(89,183,255,.35))}
+.nav-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.nav-meta .card{padding:10px 7px}
+.nav-meta .value{font-size:18px}
+.arrived{color:var(--good)!important}
+.target-display{font-size:12px;color:var(--muted);margin-top:10px;word-break:break-all}
+.note{font-size:12px;color:var(--muted);line-height:1.4;margin-top:10px}
+
 @media(max-width:430px){
   .value{font-size:24px}
   svg{height:285px}
   .controls{grid-template-columns:1fr 1fr}
   .controls .primary{grid-column:1/-1}
+  .input-grid{grid-template-columns:1fr}
+  .compass-wrap{width:215px;height:215px}
 }
 </style>
 </head>
 <body>
 <main>
-  <h1>Acreage Finder</h1>
-  <div class="subtitle">Walk your property boundary with your iPhone GPS.</div>
+  <h1>Acreage Finder <span class="version">v1.1</span></h1>
+  <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
-  <section class="grid" aria-label="Measurements">
-    <div class="card"><div id="acres" class="value">0.00</div><div class="label">Estimated acres</div></div>
-    <div class="card"><div id="areaSqFt" class="value">0</div><div class="label">Square feet</div></div>
-    <div class="card"><div id="perimeter" class="value">0 ft</div><div class="label">Perimeter walked</div></div>
-    <div class="card"><div id="accuracy" class="value">—</div><div class="label">GPS accuracy</div></div>
+  <section class="mode-tabs" aria-label="App mode">
+    <button id="acreageTab" class="active" type="button">Acreage</button>
+    <button id="finderTab" type="button">Find Coordinate</button>
   </section>
 
-  <section class="map" aria-label="GPS boundary plot">
-    <svg id="plot" viewBox="0 0 600 400" role="img" aria-label="Plot of recorded GPS boundary">
-      <defs>
-        <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
-          <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#193149" stroke-width="1"/>
-        </pattern>
-      </defs>
-      <rect width="600" height="400" fill="url(#grid)"/>
-      <polygon id="poly" points="" fill="rgba(89,183,255,.16)" stroke="none"/>
-      <polyline id="track" points="" fill="none" stroke="#79c7ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle id="startDot" cx="-50" cy="-50" r="7" fill="#50d890"/>
-      <circle id="currentDot" cx="-50" cy="-50" r="7" fill="#ffd166"/>
-    </svg>
-    <div class="map-note">Relative GPS plot • not a survey map</div>
-  </section>
+  <section id="acreageView" class="view active">
+    <section class="grid" aria-label="Measurements">
+      <div class="card"><div id="acres" class="value">0.00</div><div class="label">Estimated acres</div></div>
+      <div class="card"><div id="areaSqFt" class="value">0</div><div class="label">Square feet</div></div>
+      <div class="card"><div id="perimeter" class="value">0 ft</div><div class="label">Perimeter walked</div></div>
+      <div class="card"><div id="accuracy" class="value">—</div><div class="label">GPS accuracy</div></div>
+    </section>
 
-  <section class="controls">
-    <button id="startBtn" class="primary" type="button">Start Walking</button>
-    <button id="addBtn" type="button" disabled>Add Point</button>
-    <button id="stopBtn" type="button" disabled>Finish</button>
-  </section>
+    <section class="map" aria-label="GPS boundary plot">
+      <svg id="plot" viewBox="0 0 600 400" role="img" aria-label="Plot of recorded GPS boundary">
+        <defs>
+          <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+            <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#193149" stroke-width="1"/>
+          </pattern>
+        </defs>
+        <rect width="600" height="400" fill="url(#grid)"/>
+        <polygon id="poly" points="" fill="rgba(89,183,255,.16)" stroke="none"/>
+        <polyline id="track" points="" fill="none" stroke="#79c7ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle id="startDot" cx="-50" cy="-50" r="7" fill="#50d890"/>
+        <circle id="currentDot" cx="-50" cy="-50" r="7" fill="#ffd166"/>
+      </svg>
+      <div class="map-note">Relative GPS plot • not a survey map</div>
+    </section>
 
-  <section class="row">
-    <button id="undoBtn" class="secondary" type="button" disabled>Undo Last</button>
-    <button id="clearBtn" class="secondary" type="button">Clear</button>
-    <button id="geoBtn" class="secondary" type="button" disabled>Export GeoJSON</button>
-  </section>
+    <section class="controls">
+      <button id="startBtn" class="primary" type="button">Start Walking</button>
+      <button id="addBtn" type="button" disabled>Add Point</button>
+      <button id="stopBtn" type="button" disabled>Finish</button>
+    </section>
 
-  <div id="status" class="status" role="status" aria-live="polite">
-    Ready. For best results, walk near the actual boundary and keep the phone where it has a clear view of the sky.
-  </div>
+    <section class="row">
+      <button id="undoBtn" class="secondary" type="button" disabled>Undo Last</button>
+      <button id="clearBtn" class="secondary" type="button">Clear</button>
+      <button id="geoBtn" class="secondary" type="button" disabled>Export GeoJSON</button>
+    </section>
 
-  <details>
-    <summary>How this works</summary>
-    <div class="help">
-      <p><b>Start Walking</b> requests GPS access and records your path automatically. <b>Add Point</b> lets you manually save your current GPS position at important corners. <b>Finish</b> closes the polygon from your last recorded point back to your first and calculates the enclosed area.</p>
-      <p>Phone GPS is useful for locating and estimating acreage, but it is not a legal land survey. Tree cover, terrain, buildings, and satellite geometry can move individual readings by several feet or more.</p>
-      <p>On iPhone, browser GPS normally requires this page to be served from an <b>HTTPS</b> website. Opening the HTML directly as a local <code>file://</code> may not allow location access.</p>
+    <div id="status" class="status" role="status" aria-live="polite">
+      Ready. For best results, walk near the actual boundary and keep the phone where it has a clear view of the sky.
     </div>
-  </details>
+
+    <details>
+      <summary>How acreage mode works</summary>
+      <div class="help">
+        <p><b>Start Walking</b> requests GPS access and records your path automatically. <b>Add Point</b> lets you manually save your current GPS position at important corners. <b>Finish</b> closes the polygon from your last recorded point back to your first and calculates the enclosed area.</p>
+        <p>Phone GPS is useful for locating and estimating acreage, but it is not a legal land survey. Tree cover, terrain, buildings, and satellite geometry can move individual readings by several feet or more.</p>
+        <p>On iPhone, browser GPS normally requires this page to be served from an <b>HTTPS</b> website. Opening the HTML directly as a local <code>file://</code> may not allow location access.</p>
+      </div>
+    </details>
+  </section>
+
+  <section id="finderView" class="view">
+    <div class="finder-panel">
+      <div class="input-grid">
+        <div class="field">
+          <label for="targetLat">Target latitude</label>
+          <input id="targetLat" inputmode="decimal" autocomplete="off" placeholder="41.123456">
+        </div>
+        <div class="field">
+          <label for="targetLon">Target longitude</label>
+          <input id="targetLon" inputmode="decimal" autocomplete="off" placeholder="-74.123456">
+        </div>
+      </div>
+      <div class="paste-row">
+        <input id="coordinatePaste" autocomplete="off" placeholder="Or paste: 41.123456, -74.123456">
+      </div>
+      <div class="finder-controls">
+        <button id="usePasteBtn" class="secondary" type="button">Use Pasted Coordinate</button>
+        <button id="useCurrentBtn" class="secondary" type="button">Use Current Position</button>
+        <button id="navBtn" class="primary wide" type="button">Start Navigation</button>
+        <button id="stopNavBtn" class="stop wide" type="button" disabled>Stop Navigation</button>
+      </div>
+    </div>
+
+    <div class="nav-card">
+      <div id="distanceValue" class="distance-big">—</div>
+      <div class="distance-unit">feet to target</div>
+
+      <div class="compass-wrap" aria-label="Direction pointer">
+        <div id="arrow" class="arrow">
+          <div class="arrow-head"></div>
+          <div class="arrow-shaft"></div>
+        </div>
+      </div>
+
+      <div class="nav-meta">
+        <div class="card"><div id="bearingValue" class="value">—</div><div class="label">Bearing</div></div>
+        <div class="card"><div id="directionValue" class="value">—</div><div class="label">Direction</div></div>
+        <div class="card"><div id="finderAccuracy" class="value">—</div><div class="label">GPS Accuracy</div></div>
+      </div>
+
+      <div id="targetDisplay" class="target-display">No target selected.</div>
+    </div>
+
+    <div id="finderStatus" class="status" role="status" aria-live="polite">
+      Enter a latitude and longitude, then tap Start Navigation. On iPhone, you may be asked for Location and Motion & Orientation permission.
+    </div>
+    <div class="note">The arrow uses iPhone compass/device-orientation data when Safari permits it. GPS and compass errors can be significant near trees, buildings, vehicles, magnetic objects, or poor satellite geometry. This is a locating aid, not a legal survey instrument.</div>
+
+    <details>
+      <summary>How coordinate finder works</summary>
+      <div class="help">
+        <p>The app continuously calculates the straight-line distance and true bearing from your current GPS position to the entered coordinate.</p>
+        <p>The pointer combines that bearing with the iPhone compass heading. If compass access is unavailable, the app still shows distance and bearing, but the pointer may remain referenced to north instead of the direction the phone is facing.</p>
+      </div>
+    </details>
+  </section>
 </main>
 
 <script>
@@ -117,13 +224,30 @@ small, .help{color:var(--muted);line-height:1.45}
   "use strict";
 
   const el = id => document.getElementById(id);
+
+  // Shared UI
+  const acreageTab=el("acreageTab"), finderTab=el("finderTab"),
+        acreageView=el("acreageView"), finderView=el("finderView");
+
+  acreageTab.addEventListener("click",()=>setMode("acreage"));
+  finderTab.addEventListener("click",()=>setMode("finder"));
+
+  function setMode(mode){
+    const acreage=mode==="acreage";
+    acreageTab.classList.toggle("active",acreage);
+    finderTab.classList.toggle("active",!acreage);
+    acreageView.classList.toggle("active",acreage);
+    finderView.classList.toggle("active",!acreage);
+  }
+
+  // ---------- Acreage mode (v1.0 behavior preserved) ----------
   const acresEl = el("acres"), areaSqFtEl = el("areaSqFt"), perimeterEl = el("perimeter"),
         accuracyEl = el("accuracy"), statusEl = el("status"), startBtn = el("startBtn"),
         addBtn = el("addBtn"), stopBtn = el("stopBtn"), undoBtn = el("undoBtn"),
         clearBtn = el("clearBtn"), geoBtn = el("geoBtn"), track = el("track"),
         poly = el("poly"), startDot = el("startDot"), currentDot = el("currentDot");
 
-  let watchId = null;
+  let acreageWatchId = null;
   let points = [];
   let currentFix = null;
   let walking = false;
@@ -132,6 +256,8 @@ small, .help{color:var(--muted);line-height:1.45}
   const maxUsefulAccuracyM = 25;
 
   function toRad(d){ return d * Math.PI / 180; }
+  function toDeg(r){ return r * 180 / Math.PI; }
+  function norm360(d){ return (d % 360 + 360) % 360; }
 
   function haversine(a,b){
     const R=6371008.8;
@@ -139,6 +265,19 @@ small, .help{color:var(--muted);line-height:1.45}
     const dp=toRad(b.lat-a.lat), dl=toRad(b.lon-a.lon);
     const h=Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
     return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));
+  }
+
+  function bearingDeg(a,b){
+    const p1=toRad(a.lat), p2=toRad(b.lat);
+    const dl=toRad(b.lon-a.lon);
+    const y=Math.sin(dl)*Math.cos(p2);
+    const x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
+    return norm360(toDeg(Math.atan2(y,x)));
+  }
+
+  function cardinal(d){
+    const dirs=["N","NE","E","SE","S","SW","W","NW"];
+    return dirs[Math.round(norm360(d)/45)%8];
   }
 
   function localXY(p, origin){
@@ -175,10 +314,10 @@ small, .help{color:var(--muted);line-height:1.45}
     }
     points.push(p);
     finished=false;
-    update();
+    updateAcreage();
   }
 
-  function update(){
+  function updateAcreage(){
     const areaM2=polygonAreaM2(points);
     const acres=areaM2/4046.8564224;
     const sqft=areaM2*10.7639104167;
@@ -232,21 +371,24 @@ small, .help{color:var(--muted);line-height:1.45}
     }
   }
 
-  function onPosition(pos){
+  function onAcreagePosition(pos){
     const c=pos.coords;
     currentFix={lat:c.latitude,lon:c.longitude,accuracy:c.accuracy,altitude:c.altitude,heading:c.heading,speed:c.speed};
     const ft=c.accuracy*3.280839895;
     if(walking && c.accuracy<=maxUsefulAccuracyM) addRecordedPoint(currentFix,false);
-    update();
+    updateAcreage();
     statusEl.innerHTML=`GPS active. Accuracy about <b>${Math.round(ft)} ft</b>. Recorded <span class="pointcount"><b>${points.length}</b></span> points.` +
       (c.accuracy>maxUsefulAccuracyM ? ` <span class="warn">Waiting for a better GPS fix before auto-recording.</span>` : "");
   }
 
-  function onError(err){
-    const msg = err.code===1 ? "Location permission was denied. Enable Location for Safari and this website."
+  function geoErrorMessage(err){
+    return err.code===1 ? "Location permission was denied. Enable Location for Safari and this website."
       : err.code===2 ? "GPS position is currently unavailable."
       : "GPS timed out. Move to a clearer outdoor area and try again.";
-    statusEl.innerHTML=`<span class="bad">${msg}</span>`;
+  }
+
+  function onAcreageError(err){
+    statusEl.innerHTML=`<span class="bad">${geoErrorMessage(err)}</span>`;
   }
 
   startBtn.addEventListener("click",()=>{
@@ -256,7 +398,7 @@ small, .help{color:var(--muted);line-height:1.45}
     walking=true; finished=false;
     startBtn.disabled=true; addBtn.disabled=false; stopBtn.disabled=false;
     statusEl.textContent="Requesting a high-accuracy GPS fix…";
-    watchId=navigator.geolocation.watchPosition(onPosition,onError,{
+    acreageWatchId=navigator.geolocation.watchPosition(onAcreagePosition,onAcreageError,{
       enableHighAccuracy:true, maximumAge:0, timeout:15000
     });
   });
@@ -269,9 +411,9 @@ small, .help{color:var(--muted);line-height:1.45}
 
   stopBtn.addEventListener("click",()=>{
     walking=false; finished=points.length>=3;
-    if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}
+    if(acreageWatchId!==null){navigator.geolocation.clearWatch(acreageWatchId);acreageWatchId=null}
     startBtn.disabled=false; addBtn.disabled=true; stopBtn.disabled=true;
-    update();
+    updateAcreage();
     if(points.length>=3){
       statusEl.innerHTML=`Boundary closed. Estimated area: <b>${acresEl.textContent} acres</b>.`;
     } else {
@@ -280,16 +422,16 @@ small, .help{color:var(--muted);line-height:1.45}
   });
 
   undoBtn.addEventListener("click",()=>{
-    points.pop(); finished=false; update();
+    points.pop(); finished=false; updateAcreage();
     statusEl.innerHTML=`Last point removed. <b>${points.length}</b> points remain.`;
   });
 
   clearBtn.addEventListener("click",()=>{
-    if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}
+    if(acreageWatchId!==null){navigator.geolocation.clearWatch(acreageWatchId);acreageWatchId=null}
     walking=false; finished=false; points=[]; currentFix=null;
     startBtn.disabled=false; addBtn.disabled=true; stopBtn.disabled=true;
     statusEl.textContent="Cleared. Ready for a new boundary walk.";
-    update();
+    updateAcreage();
   });
 
   geoBtn.addEventListener("click",()=>{
@@ -316,7 +458,178 @@ small, .help{color:var(--muted);line-height:1.45}
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
 
-  update();
+  // ---------- Find Coordinate mode ----------
+  const targetLatEl=el("targetLat"), targetLonEl=el("targetLon"),
+        coordinatePasteEl=el("coordinatePaste"), usePasteBtn=el("usePasteBtn"),
+        useCurrentBtn=el("useCurrentBtn"), navBtn=el("navBtn"), stopNavBtn=el("stopNavBtn"),
+        distanceValue=el("distanceValue"), bearingValue=el("bearingValue"),
+        directionValue=el("directionValue"), finderAccuracy=el("finderAccuracy"),
+        arrow=el("arrow"), finderStatus=el("finderStatus"), targetDisplay=el("targetDisplay");
+
+  let finderWatchId=null;
+  let finderTarget=null;
+  let finderFix=null;
+  let compassHeading=null;
+  let orientationListening=false;
+  let navigating=false;
+
+  function parseNumber(v){
+    const n=Number(String(v).trim());
+    return Number.isFinite(n)?n:null;
+  }
+
+  function getTargetFromInputs(){
+    const lat=parseNumber(targetLatEl.value), lon=parseNumber(targetLonEl.value);
+    if(lat===null || lon===null || lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+    return {lat,lon};
+  }
+
+  usePasteBtn.addEventListener("click",()=>{
+    const txt=coordinatePasteEl.value.trim().replace(/[()]/g,"");
+    const m=txt.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if(!m){
+      finderStatus.innerHTML='<span class="bad">Could not read that coordinate. Use latitude, longitude — for example 41.123456, -74.123456.</span>';
+      return;
+    }
+    const lat=Number(m[1]), lon=Number(m[2]);
+    if(lat < -90 || lat > 90 || lon < -180 || lon > 180){
+      finderStatus.innerHTML='<span class="bad">That latitude or longitude is outside the valid range.</span>';
+      return;
+    }
+    targetLatEl.value=lat;
+    targetLonEl.value=lon;
+    finderStatus.textContent="Coordinate loaded. Tap Start Navigation.";
+  });
+
+  useCurrentBtn.addEventListener("click",()=>{
+    const f=finderFix || currentFix;
+    if(!f){
+      if(!navigator.geolocation){
+        finderStatus.innerHTML='<span class="bad">This browser does not support geolocation.</span>'; return;
+      }
+      finderStatus.textContent="Getting your current GPS position…";
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const c=pos.coords;
+        targetLatEl.value=c.latitude.toFixed(7);
+        targetLonEl.value=c.longitude.toFixed(7);
+        finderStatus.textContent="Current position loaded as the target.";
+      },err=>finderStatus.innerHTML=`<span class="bad">${geoErrorMessage(err)}</span>`,{
+        enableHighAccuracy:true, maximumAge:0, timeout:15000
+      });
+      return;
+    }
+    targetLatEl.value=f.lat.toFixed(7);
+    targetLonEl.value=f.lon.toFixed(7);
+    finderStatus.textContent="Current position loaded as the target.";
+  });
+
+  function handleOrientation(e){
+    let h=null;
+    if(typeof e.webkitCompassHeading==="number"){
+      h=e.webkitCompassHeading;
+    } else if(typeof e.alpha==="number"){
+      // Generic fallback. On many browsers alpha increases opposite compass heading.
+      h=norm360(360-e.alpha);
+    }
+    if(h!==null){
+      compassHeading=norm360(h);
+      updateFinderDisplay();
+    }
+  }
+
+  async function requestCompass(){
+    if(orientationListening) return true;
+    try{
+      if(typeof DeviceOrientationEvent!=="undefined" &&
+         typeof DeviceOrientationEvent.requestPermission==="function"){
+        const result=await DeviceOrientationEvent.requestPermission();
+        if(result!=="granted") return false;
+      }
+      window.addEventListener("deviceorientation",handleOrientation,true);
+      orientationListening=true;
+      return true;
+    }catch(e){
+      return false;
+    }
+  }
+
+  function updateFinderDisplay(){
+    if(!finderTarget || !finderFix) return;
+    const distM=haversine(finderFix,finderTarget);
+    const distFt=distM*3.280839895;
+    const brg=bearingDeg(finderFix,finderTarget);
+    const accuracyFt=finderFix.accuracy*3.280839895;
+
+    distanceValue.textContent=Math.round(distFt).toLocaleString();
+    distanceValue.classList.toggle("arrived",distFt<=10);
+    bearingValue.textContent=String(Math.round(brg)).padStart(3,"0")+"°";
+    directionValue.textContent=cardinal(brg);
+    finderAccuracy.textContent="±"+Math.round(accuracyFt)+" ft";
+    finderAccuracy.className="value "+(accuracyFt<=15?"good":accuracyFt<=40?"warn":"bad");
+    targetDisplay.textContent=`Target: ${finderTarget.lat.toFixed(7)}, ${finderTarget.lon.toFixed(7)}`;
+
+    // Arrow points to target relative to the direction the phone is facing.
+    // If compass heading is unavailable, it points to absolute bearing relative to north.
+    const rotation=norm360(brg-(compassHeading===null?0:compassHeading));
+    arrow.style.transform=`translate(-50%,-50%) rotate(${rotation.toFixed(1)}deg)`;
+
+    if(distFt<=10){
+      finderStatus.innerHTML=`<span class="good"><b>At target area.</b></span> About ${Math.round(distFt)} ft away; GPS accuracy is about ±${Math.round(accuracyFt)} ft.`;
+    } else if(compassHeading===null){
+      finderStatus.innerHTML=`Navigation active. <b>${Math.round(distFt)} ft</b> to target, bearing <b>${Math.round(brg)}° ${cardinal(brg)}</b>. <span class="warn">Compass heading is not available yet; pointer is north-referenced.</span>`;
+    } else {
+      finderStatus.innerHTML=`Navigation active. <b>${Math.round(distFt)} ft</b> to target. Walk in the direction of the arrow.`;
+    }
+  }
+
+  function onFinderPosition(pos){
+    const c=pos.coords;
+    finderFix={lat:c.latitude,lon:c.longitude,accuracy:c.accuracy,altitude:c.altitude,heading:c.heading,speed:c.speed};
+    if(compassHeading===null && typeof c.heading==="number" && Number.isFinite(c.heading) && c.speed && c.speed>0.8){
+      compassHeading=norm360(c.heading);
+    }
+    updateFinderDisplay();
+  }
+
+  function stopNavigation(){
+    navigating=false;
+    if(finderWatchId!==null){navigator.geolocation.clearWatch(finderWatchId);finderWatchId=null}
+    navBtn.disabled=false; stopNavBtn.disabled=true;
+    finderStatus.textContent="Navigation stopped. Your target coordinate is still loaded.";
+  }
+
+  navBtn.addEventListener("click",async()=>{
+    const target=getTargetFromInputs();
+    if(!target){
+      finderStatus.innerHTML='<span class="bad">Enter a valid latitude from -90 to 90 and longitude from -180 to 180.</span>';
+      return;
+    }
+    if(!navigator.geolocation){
+      finderStatus.innerHTML='<span class="bad">This browser does not support geolocation.</span>'; return;
+    }
+
+    finderTarget=target;
+    targetDisplay.textContent=`Target: ${target.lat.toFixed(7)}, ${target.lon.toFixed(7)}`;
+    finderStatus.textContent="Requesting GPS and compass access…";
+
+    const compassGranted=await requestCompass();
+    if(!compassGranted){
+      compassHeading=null;
+    }
+
+    if(finderWatchId!==null) navigator.geolocation.clearWatch(finderWatchId);
+    navigating=true;
+    navBtn.disabled=true; stopNavBtn.disabled=false;
+    finderWatchId=navigator.geolocation.watchPosition(onFinderPosition,err=>{
+      finderStatus.innerHTML=`<span class="bad">${geoErrorMessage(err)}</span>`;
+    },{
+      enableHighAccuracy:true, maximumAge:0, timeout:15000
+    });
+  });
+
+  stopNavBtn.addEventListener("click",stopNavigation);
+
+  updateAcreage();
 })();
 </script>
 </body>
