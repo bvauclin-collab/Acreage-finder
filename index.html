@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.1</title>
+<title>Acreage Finder v1.2</title>
 <style>
 :root{
   color-scheme:dark;
@@ -91,6 +91,30 @@ small, .help{color:var(--muted);line-height:1.45}
 .target-display{font-size:12px;color:var(--muted);margin-top:10px;word-break:break-all}
 .note{font-size:12px;color:var(--muted);line-height:1.4;margin-top:10px}
 
+
+.saved-section{
+  margin-top:12px;background:rgba(13,25,41,.92);border:1px solid #20344e;border-radius:17px;padding:13px
+}
+.saved-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.saved-header h3{margin:0;font-size:16px}
+.saved-list{display:grid;gap:8px}
+.saved-item{
+  background:#091624;border:1px solid #20344e;border-radius:13px;padding:10px;
+  display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center
+}
+.saved-main{min-width:0}
+.saved-name{font-weight:750;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.saved-meta{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.35}
+.saved-actions{display:flex;gap:7px}
+.saved-actions button{min-height:38px;padding:7px 10px;border-radius:10px;font-size:13px}
+.empty-saved{font-size:13px;color:var(--muted);padding:4px 0}
+.name-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:10px}
+.name-row input{
+  min-height:46px;border-radius:12px;border:1px solid #2a415d;background:#081523;color:var(--text);
+  padding:0 12px;font-size:15px
+}
+.name-row button{min-height:46px}
+
 @media(max-width:430px){
   .value{font-size:24px}
   svg{height:285px}
@@ -103,7 +127,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.1</span></h1>
+  <h1>Acreage Finder <span class="version">v1.2</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode">
@@ -147,6 +171,15 @@ small, .help{color:var(--muted);line-height:1.45}
       <button id="geoBtn" class="secondary" type="button" disabled>Export GeoJSON</button>
     </section>
 
+    <section class="saved-section">
+      <div class="saved-header"><h3>Saved Acreage</h3><span class="label">Stored on this iPhone</span></div>
+      <div class="name-row">
+        <input id="acreageSaveName" autocomplete="off" placeholder="Name this property (optional)">
+        <button id="saveAcreageBtn" class="primary" type="button" disabled>Save</button>
+      </div>
+      <div id="savedAcreageList" class="saved-list" style="margin-top:10px"></div>
+    </section>
+
     <div id="status" class="status" role="status" aria-live="polite">
       Ready. For best results, walk near the actual boundary and keep the phone where it has a clear view of the sky.
     </div>
@@ -183,6 +216,15 @@ small, .help{color:var(--muted);line-height:1.45}
         <button id="stopNavBtn" class="stop wide" type="button" disabled>Stop Navigation</button>
       </div>
     </div>
+
+    <section class="saved-section">
+      <div class="saved-header"><h3>Saved Coordinates</h3><span class="label">Stored on this iPhone</span></div>
+      <div class="name-row">
+        <input id="coordinateSaveName" autocomplete="off" placeholder="Name this point (optional)">
+        <button id="saveCoordinateBtn" class="primary" type="button">Save</button>
+      </div>
+      <div id="savedCoordinateList" class="saved-list" style="margin-top:10px"></div>
+    </section>
 
     <div class="nav-card">
       <div id="distanceValue" class="distance-big">—</div>
@@ -228,6 +270,30 @@ small, .help{color:var(--muted);line-height:1.45}
   // Shared UI
   const acreageTab=el("acreageTab"), finderTab=el("finderTab"),
         acreageView=el("acreageView"), finderView=el("finderView");
+
+  const saveAcreageBtn=el("saveAcreageBtn"), acreageSaveName=el("acreageSaveName"),
+        savedAcreageList=el("savedAcreageList"), saveCoordinateBtn=el("saveCoordinateBtn"),
+        coordinateSaveName=el("coordinateSaveName"), savedCoordinateList=el("savedCoordinateList");
+
+  const STORAGE_ACREAGE="acreageFinder.savedAcreage.v1";
+  const STORAGE_COORDS="acreageFinder.savedCoordinates.v1";
+
+  function loadStore(key){
+    try{
+      const v=JSON.parse(localStorage.getItem(key) || "[]");
+      return Array.isArray(v)?v:[];
+    }catch(e){ return []; }
+  }
+  function writeStore(key,value){
+    localStorage.setItem(key,JSON.stringify(value));
+  }
+  function safeName(value,fallback){
+    const t=String(value||"").trim();
+    return t || fallback;
+  }
+  function formatSavedDate(iso){
+    try{return new Date(iso).toLocaleString()}catch(e){return iso}
+  }
 
   acreageTab.addEventListener("click",()=>setMode("acreage"));
   finderTab.addEventListener("click",()=>setMode("finder"));
@@ -336,6 +402,7 @@ small, .help{color:var(--muted);line-height:1.45}
 
     undoBtn.disabled=points.length===0;
     geoBtn.disabled=points.length<3;
+    saveAcreageBtn.disabled=points.length<3;
     renderPlot();
   }
 
@@ -456,6 +523,75 @@ small, .help{color:var(--muted);line-height:1.45}
     const a=document.createElement("a");
     a.href=url; a.download="acreage-boundary.geojson"; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+
+
+  function renderSavedAcreage(){
+    const saved=loadStore(STORAGE_ACREAGE);
+    savedAcreageList.innerHTML="";
+    if(!saved.length){
+      savedAcreageList.innerHTML='<div class="empty-saved">No saved acreage yet.</div>';
+      return;
+    }
+    saved.slice().reverse().forEach(item=>{
+      const row=document.createElement("div");
+      row.className="saved-item";
+      const main=document.createElement("div");
+      main.className="saved-main";
+      main.innerHTML=`<div class="saved-name"></div><div class="saved-meta"></div>`;
+      main.querySelector(".saved-name").textContent=item.name;
+      main.querySelector(".saved-meta").textContent=`${Number(item.acres).toFixed(2)} acres • ${item.points.length} points • ${formatSavedDate(item.savedAt)}`;
+
+      const actions=document.createElement("div");
+      actions.className="saved-actions";
+      const load=document.createElement("button");
+      load.type="button"; load.textContent="Load";
+      load.addEventListener("click",()=>{
+        if(acreageWatchId!==null){navigator.geolocation.clearWatch(acreageWatchId);acreageWatchId=null}
+        walking=false; finished=true;
+        points=(item.points||[]).map(p=>({...p}));
+        currentFix=points.length?{...points[points.length-1]}:null;
+        startBtn.disabled=false; addBtn.disabled=true; stopBtn.disabled=true;
+        acreageSaveName.value=item.name;
+        updateAcreage();
+        statusEl.innerHTML=`Loaded <b>${item.name}</b> — ${Number(item.acres).toFixed(2)} acres.`;
+      });
+      const del=document.createElement("button");
+      del.type="button"; del.textContent="Delete"; del.className="stop";
+      del.addEventListener("click",()=>{
+        const now=loadStore(STORAGE_ACREAGE).filter(x=>x.id!==item.id);
+        writeStore(STORAGE_ACREAGE,now);
+        renderSavedAcreage();
+        statusEl.textContent=`Deleted saved acreage "${item.name}".`;
+      });
+      actions.append(load,del);
+      row.append(main,actions);
+      savedAcreageList.appendChild(row);
+    });
+  }
+
+  saveAcreageBtn.addEventListener("click",()=>{
+    if(points.length<3){
+      statusEl.innerHTML='<span class="warn">Finish or record at least 3 points before saving acreage.</span>';
+      return;
+    }
+    const areaM2=polygonAreaM2(points);
+    const acres=areaM2/4046.8564224;
+    const saved=loadStore(STORAGE_ACREAGE);
+    const item={
+      id:Date.now()+"-"+Math.random().toString(16).slice(2),
+      name:safeName(acreageSaveName.value,`Property ${saved.length+1}`),
+      savedAt:new Date().toISOString(),
+      acres,
+      squareFeet:areaM2*10.7639104167,
+      perimeterFeet:perimeterM(points,true)*3.280839895,
+      points:points.map(p=>({...p}))
+    };
+    saved.push(item);
+    writeStore(STORAGE_ACREAGE,saved);
+    acreageSaveName.value=item.name;
+    renderSavedAcreage();
+    statusEl.innerHTML=`Saved <b>${item.name}</b> — ${acres.toFixed(2)} acres.`;
   });
 
   // ---------- Find Coordinate mode ----------
@@ -627,8 +763,74 @@ small, .help{color:var(--muted);line-height:1.45}
     });
   });
 
+
+  function renderSavedCoordinates(){
+    const saved=loadStore(STORAGE_COORDS);
+    savedCoordinateList.innerHTML="";
+    if(!saved.length){
+      savedCoordinateList.innerHTML='<div class="empty-saved">No saved coordinates yet.</div>';
+      return;
+    }
+    saved.slice().reverse().forEach(item=>{
+      const row=document.createElement("div");
+      row.className="saved-item";
+      const main=document.createElement("div");
+      main.className="saved-main";
+      main.innerHTML=`<div class="saved-name"></div><div class="saved-meta"></div>`;
+      main.querySelector(".saved-name").textContent=item.name;
+      main.querySelector(".saved-meta").textContent=`${Number(item.lat).toFixed(7)}, ${Number(item.lon).toFixed(7)} • ${formatSavedDate(item.savedAt)}`;
+
+      const actions=document.createElement("div");
+      actions.className="saved-actions";
+      const load=document.createElement("button");
+      load.type="button"; load.textContent="Load";
+      load.addEventListener("click",()=>{
+        targetLatEl.value=Number(item.lat).toFixed(7);
+        targetLonEl.value=Number(item.lon).toFixed(7);
+        coordinateSaveName.value=item.name;
+        finderTarget={lat:Number(item.lat),lon:Number(item.lon)};
+        targetDisplay.textContent=`Target: ${finderTarget.lat.toFixed(7)}, ${finderTarget.lon.toFixed(7)}`;
+        finderStatus.innerHTML=`Loaded <b>${item.name}</b>. Tap Start Navigation.`;
+      });
+      const del=document.createElement("button");
+      del.type="button"; del.textContent="Delete"; del.className="stop";
+      del.addEventListener("click",()=>{
+        const now=loadStore(STORAGE_COORDS).filter(x=>x.id!==item.id);
+        writeStore(STORAGE_COORDS,now);
+        renderSavedCoordinates();
+        finderStatus.textContent=`Deleted saved coordinate "${item.name}".`;
+      });
+      actions.append(load,del);
+      row.append(main,actions);
+      savedCoordinateList.appendChild(row);
+    });
+  }
+
+  saveCoordinateBtn.addEventListener("click",()=>{
+    const target=getTargetFromInputs();
+    if(!target){
+      finderStatus.innerHTML='<span class="bad">Enter a valid latitude and longitude before saving.</span>';
+      return;
+    }
+    const saved=loadStore(STORAGE_COORDS);
+    const item={
+      id:Date.now()+"-"+Math.random().toString(16).slice(2),
+      name:safeName(coordinateSaveName.value,`Point ${saved.length+1}`),
+      savedAt:new Date().toISOString(),
+      lat:target.lat,
+      lon:target.lon
+    };
+    saved.push(item);
+    writeStore(STORAGE_COORDS,saved);
+    coordinateSaveName.value=item.name;
+    renderSavedCoordinates();
+    finderStatus.innerHTML=`Saved coordinate <b>${item.name}</b>.`;
+  });
+
   stopNavBtn.addEventListener("click",stopNavigation);
 
+  renderSavedAcreage();
+  renderSavedCoordinates();
   updateAcreage();
 })();
 </script>
