@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.2</title>
+<title>Acreage Finder v1.3</title>
 <style>
 :root{
   color-scheme:dark;
@@ -127,7 +127,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.2</span></h1>
+  <h1>Acreage Finder <span class="version">v1.3</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode">
@@ -207,11 +207,10 @@ small, .help{color:var(--muted);line-height:1.45}
         </div>
       </div>
       <div class="paste-row">
-        <input id="coordinatePaste" autocomplete="off" placeholder="Or paste: 41.123456, -74.123456">
+        <input id="coordinatePaste" autocomplete="off" placeholder="Paste coordinate: 41.123456, -74.123456">
       </div>
       <div class="finder-controls">
-        <button id="usePasteBtn" class="secondary" type="button">Use Pasted Coordinate</button>
-        <button id="useCurrentBtn" class="secondary" type="button">Use Current Position</button>
+        <button id="useCurrentBtn" class="secondary wide" type="button">Use Current Position</button>
         <button id="navBtn" class="primary wide" type="button">Start Navigation</button>
         <button id="stopNavBtn" class="stop wide" type="button" disabled>Stop Navigation</button>
       </div>
@@ -247,7 +246,7 @@ small, .help{color:var(--muted);line-height:1.45}
     </div>
 
     <div id="finderStatus" class="status" role="status" aria-live="polite">
-      Enter a latitude and longitude, then tap Start Navigation. On iPhone, you may be asked for Location and Motion & Orientation permission.
+      Paste a full coordinate or enter latitude and longitude separately, then tap Start Navigation. On iPhone, you may be asked for Location and Motion & Orientation permission.
     </div>
     <div class="note">The arrow uses iPhone compass/device-orientation data when Safari permits it. GPS and compass errors can be significant near trees, buildings, vehicles, magnetic objects, or poor satellite geometry. This is a locating aid, not a legal survey instrument.</div>
 
@@ -596,7 +595,7 @@ small, .help{color:var(--muted);line-height:1.45}
 
   // ---------- Find Coordinate mode ----------
   const targetLatEl=el("targetLat"), targetLonEl=el("targetLon"),
-        coordinatePasteEl=el("coordinatePaste"), usePasteBtn=el("usePasteBtn"),
+        coordinatePasteEl=el("coordinatePaste"),
         useCurrentBtn=el("useCurrentBtn"), navBtn=el("navBtn"), stopNavBtn=el("stopNavBtn"),
         distanceValue=el("distanceValue"), bearingValue=el("bearingValue"),
         directionValue=el("directionValue"), finderAccuracy=el("finderAccuracy"),
@@ -620,21 +619,71 @@ small, .help{color:var(--muted);line-height:1.45}
     return {lat,lon};
   }
 
-  usePasteBtn.addEventListener("click",()=>{
+  function individualTargetEdited(){
+    // The individual fields are now the user's intended source of truth.
+    coordinatePasteEl.value="";
+    const target=getTargetFromInputs();
+    if(target && navigating){
+      finderTarget=target;
+      targetDisplay.textContent=`Target: ${target.lat.toFixed(7)}, ${target.lon.toFixed(7)}`;
+      updateFinderDisplay();
+      finderStatus.textContent="Target updated from latitude/longitude fields.";
+    }
+  }
+
+  targetLatEl.addEventListener("input",individualTargetEdited);
+  targetLonEl.addEventListener("input",individualTargetEdited);
+
+  function parsePastedCoordinate(showErrors=false){
     const txt=coordinatePasteEl.value.trim().replace(/[()]/g,"");
-    const m=txt.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if(!txt) return null;
+
+    // Accept common formats such as:
+    // 41.133162, -74.323462
+    // 41.133162 -74.323462
+    // 41.133162,-74.323462
+    const m=txt.match(/^\s*([+-]?\d+(?:\.\d+)?)\s*(?:,\s*|\s+)([+-]?\d+(?:\.\d+)?)\s*$/);
     if(!m){
-      finderStatus.innerHTML='<span class="bad">Could not read that coordinate. Use latitude, longitude — for example 41.123456, -74.123456.</span>';
-      return;
+      if(showErrors){
+        finderStatus.innerHTML='<span class="bad">Could not read that coordinate. Use latitude, longitude — for example 41.133162, -74.323462.</span>';
+      }
+      return null;
     }
+
     const lat=Number(m[1]), lon=Number(m[2]);
-    if(lat < -90 || lat > 90 || lon < -180 || lon > 180){
-      finderStatus.innerHTML='<span class="bad">That latitude or longitude is outside the valid range.</span>';
-      return;
+    if(!Number.isFinite(lat) || !Number.isFinite(lon) ||
+       lat < -90 || lat > 90 || lon < -180 || lon > 180){
+      if(showErrors){
+        finderStatus.innerHTML='<span class="bad">That latitude or longitude is outside the valid range.</span>';
+      }
+      return null;
     }
+
     targetLatEl.value=lat;
     targetLonEl.value=lon;
-    finderStatus.textContent="Coordinate loaded. Tap Start Navigation.";
+
+    // If navigation is already running, immediately make the pasted
+    // coordinate the active target instead of continuing toward the old one.
+    if(navigating){
+      finderTarget={lat,lon};
+      targetDisplay.textContent=`Target: ${lat.toFixed(7)}, ${lon.toFixed(7)}`;
+      updateFinderDisplay();
+    }
+
+    return {lat,lon};
+  }
+
+  coordinatePasteEl.addEventListener("input",()=>{
+    const parsed=parsePastedCoordinate(false);
+    if(parsed){
+      finderStatus.textContent=navigating
+        ? "Target updated from pasted coordinate."
+        : "Coordinate loaded. Tap Start Navigation.";
+    }
+  });
+
+  coordinatePasteEl.addEventListener("change",()=>{
+    parsePastedCoordinate(true);
   });
 
   useCurrentBtn.addEventListener("click",()=>{
@@ -735,7 +784,17 @@ small, .help{color:var(--muted);line-height:1.45}
   }
 
   navBtn.addEventListener("click",async()=>{
-    const target=getTargetFromInputs();
+    let target=null;
+
+    // If the full-coordinate box contains text, use it and synchronize
+    // the individual latitude/longitude fields automatically.
+    if(coordinatePasteEl.value.trim()){
+      target=parsePastedCoordinate(true);
+      if(!target) return;
+    } else {
+      target=getTargetFromInputs();
+    }
+
     if(!target){
       finderStatus.innerHTML='<span class="bad">Enter a valid latitude from -90 to 90 and longitude from -180 to 180.</span>';
       return;
