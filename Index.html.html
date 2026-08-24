@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Acreage Finder</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#07101d; --panel:#0d1929; --panel2:#122136; --text:#f4f7fb;
+  --muted:#9cafc5; --good:#50d890; --warn:#ffd166; --bad:#ff6b6b;
+  --accent:#59b7ff; --line:#79c7ff;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:linear-gradient(180deg,#07101d,#0b1523 65%,#07101d); color:var(--text);
+  min-height:100vh; -webkit-font-smoothing:antialiased;
+}
+main{max-width:760px;margin:auto;padding:calc(18px + env(safe-area-inset-top)) 16px calc(26px + env(safe-area-inset-bottom))}
+h1{font-size:25px;margin:0 0 3px}
+.subtitle{color:var(--muted);font-size:14px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.card{background:rgba(13,25,41,.92);border:1px solid #20344e;border-radius:17px;padding:13px}
+.value{font-size:27px;font-weight:750;letter-spacing:-.03em;line-height:1.05}
+.label{font-size:12px;color:var(--muted);margin-top:6px;text-transform:uppercase;letter-spacing:.08em}
+.map{
+  position:relative;margin-top:12px;border:1px solid #20344e;border-radius:19px;overflow:hidden;
+  background:
+    radial-gradient(circle at 40% 42%,rgba(89,183,255,.08),transparent 30%),
+    linear-gradient(#0a1726,#0b1828);
+}
+svg{display:block;width:100%;height:310px;touch-action:none}
+.map-note{position:absolute;left:10px;bottom:9px;background:rgba(3,9,16,.72);backdrop-filter:blur(6px);border:1px solid #20344e;border-radius:10px;padding:7px 9px;color:var(--muted);font-size:11px}
+.controls{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:10px;margin-top:12px}
+button{
+  min-height:52px;border:none;border-radius:15px;padding:10px 12px;font-size:16px;font-weight:700;
+  color:white;background:#1b314c;touch-action:manipulation;
+}
+button.primary{background:#1479bd}
+button.stop{background:#b33c45}
+button.secondary{background:#1b314c}
+button:disabled{opacity:.42}
+.row{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px}
+.row button{flex:1 1 130px}
+.status{margin-top:12px;padding:11px 13px;border-radius:14px;background:#0b1727;border:1px solid #20344e;font-size:14px;line-height:1.35}
+.good{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+details{margin-top:12px;background:#0d1929;border:1px solid #20344e;border-radius:15px;padding:11px 13px}
+summary{font-weight:700;cursor:pointer}
+small, .help{color:var(--muted);line-height:1.45}
+.pointcount{font-variant-numeric:tabular-nums}
+@media(max-width:430px){
+  .value{font-size:24px}
+  svg{height:285px}
+  .controls{grid-template-columns:1fr 1fr}
+  .controls .primary{grid-column:1/-1}
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>Acreage Finder</h1>
+  <div class="subtitle">Walk your property boundary with your iPhone GPS.</div>
+
+  <section class="grid" aria-label="Measurements">
+    <div class="card"><div id="acres" class="value">0.00</div><div class="label">Estimated acres</div></div>
+    <div class="card"><div id="areaSqFt" class="value">0</div><div class="label">Square feet</div></div>
+    <div class="card"><div id="perimeter" class="value">0 ft</div><div class="label">Perimeter walked</div></div>
+    <div class="card"><div id="accuracy" class="value">—</div><div class="label">GPS accuracy</div></div>
+  </section>
+
+  <section class="map" aria-label="GPS boundary plot">
+    <svg id="plot" viewBox="0 0 600 400" role="img" aria-label="Plot of recorded GPS boundary">
+      <defs>
+        <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+          <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#193149" stroke-width="1"/>
+        </pattern>
+      </defs>
+      <rect width="600" height="400" fill="url(#grid)"/>
+      <polygon id="poly" points="" fill="rgba(89,183,255,.16)" stroke="none"/>
+      <polyline id="track" points="" fill="none" stroke="#79c7ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle id="startDot" cx="-50" cy="-50" r="7" fill="#50d890"/>
+      <circle id="currentDot" cx="-50" cy="-50" r="7" fill="#ffd166"/>
+    </svg>
+    <div class="map-note">Relative GPS plot • not a survey map</div>
+  </section>
+
+  <section class="controls">
+    <button id="startBtn" class="primary" type="button">Start Walking</button>
+    <button id="addBtn" type="button" disabled>Add Point</button>
+    <button id="stopBtn" type="button" disabled>Finish</button>
+  </section>
+
+  <section class="row">
+    <button id="undoBtn" class="secondary" type="button" disabled>Undo Last</button>
+    <button id="clearBtn" class="secondary" type="button">Clear</button>
+    <button id="geoBtn" class="secondary" type="button" disabled>Export GeoJSON</button>
+  </section>
+
+  <div id="status" class="status" role="status" aria-live="polite">
+    Ready. For best results, walk near the actual boundary and keep the phone where it has a clear view of the sky.
+  </div>
+
+  <details>
+    <summary>How this works</summary>
+    <div class="help">
+      <p><b>Start Walking</b> requests GPS access and records your path automatically. <b>Add Point</b> lets you manually save your current GPS position at important corners. <b>Finish</b> closes the polygon from your last recorded point back to your first and calculates the enclosed area.</p>
+      <p>Phone GPS is useful for locating and estimating acreage, but it is not a legal land survey. Tree cover, terrain, buildings, and satellite geometry can move individual readings by several feet or more.</p>
+      <p>On iPhone, browser GPS normally requires this page to be served from an <b>HTTPS</b> website. Opening the HTML directly as a local <code>file://</code> may not allow location access.</p>
+    </div>
+  </details>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const el = id => document.getElementById(id);
+  const acresEl = el("acres"), areaSqFtEl = el("areaSqFt"), perimeterEl = el("perimeter"),
+        accuracyEl = el("accuracy"), statusEl = el("status"), startBtn = el("startBtn"),
+        addBtn = el("addBtn"), stopBtn = el("stopBtn"), undoBtn = el("undoBtn"),
+        clearBtn = el("clearBtn"), geoBtn = el("geoBtn"), track = el("track"),
+        poly = el("poly"), startDot = el("startDot"), currentDot = el("currentDot");
+
+  let watchId = null;
+  let points = [];
+  let currentFix = null;
+  let walking = false;
+  let finished = false;
+  const minAutoDistanceM = 2.5;
+  const maxUsefulAccuracyM = 25;
+
+  function toRad(d){ return d * Math.PI / 180; }
+
+  function haversine(a,b){
+    const R=6371008.8;
+    const p1=toRad(a.lat), p2=toRad(b.lat);
+    const dp=toRad(b.lat-a.lat), dl=toRad(b.lon-a.lon);
+    const h=Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+    return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));
+  }
+
+  function localXY(p, origin){
+    const R=6371008.8;
+    const x=toRad(p.lon-origin.lon)*R*Math.cos(toRad((p.lat+origin.lat)/2));
+    const y=toRad(p.lat-origin.lat)*R;
+    return {x,y};
+  }
+
+  function polygonAreaM2(ps){
+    if(ps.length<3) return 0;
+    const origin=ps[0];
+    const xy=ps.map(p=>localXY(p,origin));
+    let s=0;
+    for(let i=0;i<xy.length;i++){
+      const j=(i+1)%xy.length;
+      s += xy[i].x*xy[j].y - xy[j].x*xy[i].y;
+    }
+    return Math.abs(s)/2;
+  }
+
+  function perimeterM(ps, close=false){
+    if(ps.length<2) return 0;
+    let d=0;
+    for(let i=1;i<ps.length;i++) d+=haversine(ps[i-1],ps[i]);
+    if(close && ps.length>2) d+=haversine(ps[ps.length-1],ps[0]);
+    return d;
+  }
+
+  function addRecordedPoint(fix, manual=false){
+    const p={lat:fix.lat, lon:fix.lon, accuracy:fix.accuracy, time:new Date().toISOString(), manual};
+    if(!manual && points.length){
+      if(haversine(points[points.length-1],p) < minAutoDistanceM) return;
+    }
+    points.push(p);
+    finished=false;
+    update();
+  }
+
+  function update(){
+    const areaM2=polygonAreaM2(points);
+    const acres=areaM2/4046.8564224;
+    const sqft=areaM2*10.7639104167;
+    const perM=perimeterM(points,finished);
+    acresEl.textContent=acres.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    areaSqFtEl.textContent=Math.round(sqft).toLocaleString();
+    perimeterEl.textContent=Math.round(perM*3.280839895).toLocaleString()+" ft";
+
+    if(currentFix){
+      const ft=currentFix.accuracy*3.280839895;
+      accuracyEl.textContent=Math.round(ft)+" ft";
+      accuracyEl.className="value "+(ft<=15?"good":ft<=40?"warn":"bad");
+    } else {
+      accuracyEl.textContent="—"; accuracyEl.className="value";
+    }
+
+    undoBtn.disabled=points.length===0;
+    geoBtn.disabled=points.length<3;
+    renderPlot();
+  }
+
+  function renderPlot(){
+    const source=currentFix ? points.concat([{lat:currentFix.lat,lon:currentFix.lon}]) : points.slice();
+    if(source.length===0){
+      track.setAttribute("points",""); poly.setAttribute("points","");
+      startDot.setAttribute("cx","-50"); currentDot.setAttribute("cx","-50"); return;
+    }
+    const origin=source[0], xy=source.map(p=>localXY(p,origin));
+    let minX=Math.min(...xy.map(p=>p.x)), maxX=Math.max(...xy.map(p=>p.x));
+    let minY=Math.min(...xy.map(p=>p.y)), maxY=Math.max(...xy.map(p=>p.y));
+    if(maxX-minX<10){minX-=5;maxX+=5}
+    if(maxY-minY<10){minY-=5;maxY+=5}
+    const pad=35, W=600,H=400;
+    const sx=(W-2*pad)/(maxX-minX), sy=(H-2*pad)/(maxY-minY), s=Math.min(sx,sy);
+    const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+    const mapPt=p=>({x:W/2+(p.x-cx)*s,y:H/2-(p.y-cy)*s});
+    const recXY=points.map(p=>mapPt(localXY(p,origin)));
+    const str=recXY.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+    track.setAttribute("points",str);
+    poly.setAttribute("points",points.length>=3?str:"");
+
+    if(recXY.length){
+      startDot.setAttribute("cx",recXY[0].x); startDot.setAttribute("cy",recXY[0].y);
+    }
+    if(currentFix){
+      const c=mapPt(localXY(currentFix,origin));
+      currentDot.setAttribute("cx",c.x); currentDot.setAttribute("cy",c.y);
+    } else if(recXY.length){
+      const c=recXY[recXY.length-1];
+      currentDot.setAttribute("cx",c.x); currentDot.setAttribute("cy",c.y);
+    }
+  }
+
+  function onPosition(pos){
+    const c=pos.coords;
+    currentFix={lat:c.latitude,lon:c.longitude,accuracy:c.accuracy,altitude:c.altitude,heading:c.heading,speed:c.speed};
+    const ft=c.accuracy*3.280839895;
+    if(walking && c.accuracy<=maxUsefulAccuracyM) addRecordedPoint(currentFix,false);
+    update();
+    statusEl.innerHTML=`GPS active. Accuracy about <b>${Math.round(ft)} ft</b>. Recorded <span class="pointcount"><b>${points.length}</b></span> points.` +
+      (c.accuracy>maxUsefulAccuracyM ? ` <span class="warn">Waiting for a better GPS fix before auto-recording.</span>` : "");
+  }
+
+  function onError(err){
+    const msg = err.code===1 ? "Location permission was denied. Enable Location for Safari and this website."
+      : err.code===2 ? "GPS position is currently unavailable."
+      : "GPS timed out. Move to a clearer outdoor area and try again.";
+    statusEl.innerHTML=`<span class="bad">${msg}</span>`;
+  }
+
+  startBtn.addEventListener("click",()=>{
+    if(!navigator.geolocation){
+      statusEl.innerHTML='<span class="bad">This browser does not support geolocation.</span>'; return;
+    }
+    walking=true; finished=false;
+    startBtn.disabled=true; addBtn.disabled=false; stopBtn.disabled=false;
+    statusEl.textContent="Requesting a high-accuracy GPS fix…";
+    watchId=navigator.geolocation.watchPosition(onPosition,onError,{
+      enableHighAccuracy:true, maximumAge:0, timeout:15000
+    });
+  });
+
+  addBtn.addEventListener("click",()=>{
+    if(!currentFix){statusEl.textContent="No GPS fix yet.";return}
+    addRecordedPoint(currentFix,true);
+    statusEl.innerHTML=`Corner/manual point saved. <b>${points.length}</b> total points.`;
+  });
+
+  stopBtn.addEventListener("click",()=>{
+    walking=false; finished=points.length>=3;
+    if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}
+    startBtn.disabled=false; addBtn.disabled=true; stopBtn.disabled=true;
+    update();
+    if(points.length>=3){
+      statusEl.innerHTML=`Boundary closed. Estimated area: <b>${acresEl.textContent} acres</b>.`;
+    } else {
+      statusEl.innerHTML='<span class="warn">At least 3 recorded points are needed to calculate acreage.</span>';
+    }
+  });
+
+  undoBtn.addEventListener("click",()=>{
+    points.pop(); finished=false; update();
+    statusEl.innerHTML=`Last point removed. <b>${points.length}</b> points remain.`;
+  });
+
+  clearBtn.addEventListener("click",()=>{
+    if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}
+    walking=false; finished=false; points=[]; currentFix=null;
+    startBtn.disabled=false; addBtn.disabled=true; stopBtn.disabled=true;
+    statusEl.textContent="Cleared. Ready for a new boundary walk.";
+    update();
+  });
+
+  geoBtn.addEventListener("click",()=>{
+    if(points.length<3)return;
+    const ring=points.map(p=>[p.lon,p.lat]);
+    ring.push([points[0].lon,points[0].lat]);
+    const geo={
+      type:"FeatureCollection",
+      features:[{
+        type:"Feature",
+        properties:{
+          name:"Acreage Finder Boundary",
+          estimated_acres:Number(acresEl.textContent.replace(/,/g,"")),
+          recorded_points:points.length,
+          note:"GPS estimate; not a legal survey"
+        },
+        geometry:{type:"Polygon",coordinates:[ring]}
+      }]
+    };
+    const blob=new Blob([JSON.stringify(geo,null,2)],{type:"application/geo+json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download="acreage-boundary.geojson"; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+
+  update();
+})();
+</script>
+</body>
+</html>
