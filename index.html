@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.7.2</title>
+<title>Acreage Finder v1.8</title>
 <style>
 :root{
   color-scheme:dark;
@@ -331,7 +331,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.7.2</span></h1>
+  <h1>Acreage Finder <span class="version">v1.8</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -450,12 +450,12 @@ small, .help{color:var(--muted);line-height:1.45}
       <div id="parcelOwnerRow" class="parcel-field" style="margin-top:8px;display:none">
         <div class="k">Owner (if public in source)</div><div id="parcelOwner" class="v">—</div>
       </div>
-      <div class="parcel-warning">Government GIS parcel data is for planning/reference only and is not a survey or legal boundary determination.</div>
+      <div class="parcel-warning">Government GIS parcel data is for planning/reference only and is not a survey or legal boundary determination. Available property details vary by state.</div>
       <div class="parcel-source"><span id="parcelSourceText">Source: public government parcel GIS.</span></div>
     </div>
 
     <div id="mapStatus" class="status">Tap Locate Me if needed. Use the Satellite/Street button above the map to switch imagery.</div>
-    <div class="map-note2">Free parcel engine v1.7.2 supports New Jersey, North Carolina, and Tennessee with county routing for Davidson, Rutherford, and Williamson. GPS acreage and coordinate navigation remain nationwide.</div>
+    <div class="map-note2">Free parcel engine v1.8 supports New Jersey, North Carolina, Tennessee, Virginia, and Pennsylvania. GPS acreage and coordinate navigation remain nationwide.</div>
   </section>
 
   <section id="finderView" class="view">
@@ -658,6 +658,24 @@ small, .help{color:var(--muted);line-height:1.45}
       format:"esrijson"
     },
     {
+      id:"VA",
+      name:"Virginia VGIN Parcels",
+      state:"Virginia",
+      bounds:{south:36.50,north:39.50,west:-83.70,east:-75.15},
+      query:"https://services.dwr.virginia.gov/arcgis/rest/services/Projects/VA_Parcels/MapServer/0/query",
+      outFields:"PARCELID,PTM_ID,LOCALITY,VGIN_Locality_Name,GPIN,PIN,MapNumber,Owner1,Owner2,Address,City,State,Zip",
+      format:"geojson"
+    },
+    {
+      id:"PA",
+      name:"Pennsylvania PASDA Parcels",
+      state:"Pennsylvania",
+      bounds:{south:39.68,north:42.29,west:-80.62,east:-74.62},
+      query:"https://apps.pasda.psu.edu/arcgis/rest/services/PA_Parcels/MapServer/1/query",
+      outFields:"PIN,Source,Date,Shape_Area",
+      format:"geojson"
+    },
+    {
       id:"TN",
       name:"Tennessee Comptroller Parcel GIS",
       state:"Tennessee",
@@ -798,6 +816,8 @@ small, .help{color:var(--muted);line-height:1.45}
         provider.id==="TN_DAVIDSON" ? "APN" :
         provider.id==="TN_RUTHERFORD" ? "GISLINK" :
         provider.id==="TN_WILLIAMSON" ? "GISLINK,parcel_id" :
+        provider.id==="VA" ? "PARCELID,LOCALITY,VGIN_Locality_Name" :
+        provider.id==="PA" ? "PIN,Source" :
         "GISLINK,CALC_ACRE",
       returnGeometry:"true",
       outSR:"4326",
@@ -904,6 +924,38 @@ small, .help{color:var(--muted);line-height:1.45}
         provider:provider.name
       };
     }
+    if(provider.id==="VA"){
+      return {
+        state:"Virginia",
+        address:safeText(a.Address),
+        city:safeText(a.City),
+        county:safeText(a.VGIN_Locality_Name)||safeText(a.LOCALITY),
+        block:"",
+        lot:"",
+        parcelId:safeText(a.PARCELID)||safeText(a.GPIN)||safeText(a.PIN)||safeText(a.PTM_ID)||safeText(a.MapNumber),
+        acres:NaN,
+        landValue:NaN,
+        totalValue:NaN,
+        owner:[safeText(a.Owner1),safeText(a.Owner2)].filter(Boolean).join(" / "),
+        provider:provider.name
+      };
+    }
+    if(provider.id==="PA"){
+      return {
+        state:"Pennsylvania",
+        address:"",
+        city:"",
+        county:safeText(a.Source),
+        block:"",
+        lot:"",
+        parcelId:safeText(a.PIN),
+        acres:NaN,
+        landValue:NaN,
+        totalValue:NaN,
+        owner:"",
+        provider:provider.name
+      };
+    }
     if(provider.id==="TN"){
       return {
         state:"Tennessee",
@@ -958,7 +1010,7 @@ small, .help{color:var(--muted);line-height:1.45}
     initLeafletMap();
     const provider=providerForPoint(lat,lon);
     if(!provider){
-      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.7.2 currently supports New Jersey, North Carolina, and Tennessee. GPS acreage tools still work here.</span>';
+      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.8 currently supports New Jersey, North Carolina, Tennessee, Virginia, and Pennsylvania. GPS acreage tools still work here.</span>';
       return;
     }
 
