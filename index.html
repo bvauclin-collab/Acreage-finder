@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.4</title>
+<title>Acreage Finder v1.4.1</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
  integrity="sha256-p4NxAoJBhIINfQ3ynHT2KrzX+hrB3h8a9HfQ85u6QqQ=" crossorigin="">
 <style>
@@ -38,7 +38,7 @@ h1{font-size:25px;margin:0 0 3px}
     radial-gradient(circle at 40% 42%,rgba(89,183,255,.08),transparent 30%),
     linear-gradient(#0a1726,#0b1828);
 }
-svg{display:block;width:100%;height:310px;touch-action:none}
+#plot{display:block;width:100%;height:310px;touch-action:none}
 .map-note{position:absolute;left:10px;bottom:9px;background:rgba(3,9,16,.72);backdrop-filter:blur(6px);border:1px solid #20344e;border-radius:10px;padding:7px 9px;color:var(--muted);font-size:11px}
 .controls{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:10px;margin-top:12px}
 button{
@@ -118,6 +118,22 @@ small, .help{color:var(--muted);line-height:1.45}
 .name-row button{min-height:46px}
 
 
+
+/* Leaflet/iPhone compatibility */
+#leafletMap .leaflet-pane svg{
+  width:auto !important;
+  height:auto !important;
+  max-width:none !important;
+  max-height:none !important;
+}
+#leafletMap .leaflet-tile{
+  max-width:none !important;
+  max-height:none !important;
+}
+#leafletMap .leaflet-container{
+  background:#0b1727;
+}
+
 /* Interactive map */
 #leafletMap{width:100%;height:58vh;min-height:390px;max-height:720px;border-radius:18px;overflow:hidden;border:1px solid #20344e;background:#081523}
 .map-toolbar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
@@ -141,7 +157,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.4</span></h1>
+  <h1>Acreage Finder <span class="version">v1.4.1</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -350,7 +366,19 @@ small, .help{color:var(--muted);line-height:1.45}
     mapView.classList.toggle("active",map);
     finderView.classList.toggle("active",finder);
     if(map){
-      setTimeout(()=>{ initLeafletMap(); leafletMap.invalidateSize(); refreshMapOverlays(); },50);
+      setTimeout(()=>{
+        initLeafletMap();
+        if(leafletMap){
+          leafletMap.invalidateSize(true);
+          refreshMapOverlays();
+        }
+        const fix=getAnyCurrentFix();
+        if(fix){
+          updateUserOnMap(fix,true);
+        } else if(mapWatchId===null && navigator.geolocation){
+          startMapLocation();
+        }
+      },180);
     }
   }
 
@@ -373,6 +401,7 @@ small, .help{color:var(--muted);line-height:1.45}
     L.control.layers({"Street":streetLayer,"Satellite":satelliteLayer},{},{collapsed:true}).addTo(leafletMap);
     savedMarkersLayer=L.layerGroup().addTo(leafletMap);
     refreshMapOverlays();
+    setTimeout(()=>leafletMap && leafletMap.invalidateSize(true),300);
   }
 
   function getAnyCurrentFix(){ return finderFix || currentFix || null; }
@@ -391,8 +420,11 @@ small, .help{color:var(--muted);line-height:1.45}
     mapGpsStatus.textContent="ACTIVE"; mapGpsStatus.className="value good";
     mapAccuracy.textContent="±"+Math.round(ft)+" ft";
     mapAccuracy.className="value "+(ft<=15?"good":ft<=40?"warn":"bad");
-    if(mapFollow && (center || !mapHasCentered)){
-      leafletMap.setView(ll,18); mapHasCentered=true;
+    if(!mapHasCentered){
+      leafletMap.setView(ll,18);
+      mapHasCentered=true;
+    } else if(mapFollow && center){
+      leafletMap.panTo(ll,{animate:true,duration:.35});
     }
   }
 
@@ -436,18 +468,30 @@ small, .help{color:var(--muted);line-height:1.45}
 
   function mapPositionError(err){
     mapGpsStatus.textContent="ERROR"; mapGpsStatus.className="value bad";
-    mapStatus.innerHTML=`<span class="bad">${geoErrorMessage(err)}</span>`;
+    mapStatus.innerHTML=`<span class="bad">${geoErrorMessage(err)}</span> If needed on iPhone: Settings → Apps → Safari → Location → Allow.`;
   }
 
-  locateMapBtn.addEventListener("click",()=>{
+  function startMapLocation(){
     initLeafletMap();
-    if(!navigator.geolocation){ mapStatus.innerHTML='<span class="bad">Geolocation is not supported.</span>'; return; }
-    if(mapWatchId!==null) navigator.geolocation.clearWatch(mapWatchId);
+    if(!navigator.geolocation){
+      mapStatus.innerHTML='<span class="bad">Geolocation is not supported.</span>';
+      return;
+    }
+    if(mapWatchId!==null){
+      navigator.geolocation.clearWatch(mapWatchId);
+      mapWatchId=null;
+    }
+    mapGpsStatus.textContent="WAIT";
+    mapGpsStatus.className="value warn";
     mapStatus.textContent="Requesting high-accuracy GPS…";
     mapWatchId=navigator.geolocation.watchPosition(mapPositionSuccess,mapPositionError,{
-      enableHighAccuracy:true,maximumAge:0,timeout:15000
+      enableHighAccuracy:true,
+      maximumAge:0,
+      timeout:20000
     });
-  });
+  }
+
+  locateMapBtn.addEventListener("click",startMapLocation);
 
   followMapBtn.addEventListener("click",()=>{
     mapFollow=!mapFollow; followMapBtn.textContent="Follow: "+(mapFollow?"ON":"OFF");
