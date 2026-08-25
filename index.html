@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.5</title>
+<title>Acreage Finder v1.6</title>
 <style>
 :root{
   color-scheme:dark;
@@ -331,7 +331,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.5</span></h1>
+  <h1>Acreage Finder <span class="version">v1.6</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -440,20 +440,22 @@ small, .help{color:var(--muted);line-height:1.45}
         <div class="parcel-field"><div class="k">Lot</div><div id="parcelLot" class="v">—</div></div>
         <div class="parcel-field"><div class="k">Parcel ID</div><div id="parcelId" class="v">—</div></div>
         <div class="parcel-field"><div class="k">GIS Acres</div><div id="parcelAcres" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">State</div><div id="parcelState" class="v">—</div></div>
         <div class="parcel-field"><div class="k">County</div><div id="parcelCounty" class="v">—</div></div>
-        <div class="parcel-field"><div class="k">Municipality</div><div id="parcelMunicipality" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">Municipality / City</div><div id="parcelMunicipality" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">Data Source</div><div id="parcelProvider" class="v">—</div></div>
         <div class="parcel-field"><div class="k">Land Assessment</div><div id="parcelLandValue" class="v">—</div></div>
         <div class="parcel-field"><div class="k">Total Assessment</div><div id="parcelNetValue" class="v">—</div></div>
       </div>
       <div id="parcelOwnerRow" class="parcel-field" style="margin-top:8px;display:none">
         <div class="k">Owner (if public in source)</div><div id="parcelOwner" class="v">—</div>
       </div>
-      <div class="parcel-warning">NJ GIS parcel data is for planning/reference only and is not a survey or legal boundary determination.</div>
-      <div class="parcel-source">Source: NJ Office of GIS statewide cadastral parcel service.</div>
+      <div class="parcel-warning">Government GIS parcel data is for planning/reference only and is not a survey or legal boundary determination.</div>
+      <div class="parcel-source"><span id="parcelSourceText">Source: public government parcel GIS.</span></div>
     </div>
 
     <div id="mapStatus" class="status">Tap Locate Me if needed. Use the Satellite/Street button above the map to switch imagery.</div>
-    <div class="map-note2">Parcel tools in v1.5 are a New Jersey prototype. GPS acreage and coordinate navigation remain nationwide.</div>
+    <div class="map-note2">Free parcel engine v1.6 currently supports New Jersey and North Carolina. GPS acreage and coordinate navigation remain nationwide.</div>
   </section>
 
   <section id="finderView" class="view">
@@ -549,9 +551,9 @@ small, .help{color:var(--muted);line-height:1.45}
         parcelCard=el("parcelCard"), parcelTitle=el("parcelTitle"),
         parcelSubtitle=el("parcelSubtitle"), parcelBlock=el("parcelBlock"),
         parcelLot=el("parcelLot"), parcelId=el("parcelId"), parcelAcres=el("parcelAcres"),
-        parcelCounty=el("parcelCounty"), parcelMunicipality=el("parcelMunicipality"),
+        parcelState=el("parcelState"), parcelCounty=el("parcelCounty"), parcelMunicipality=el("parcelMunicipality"), parcelProvider=el("parcelProvider"),
         parcelLandValue=el("parcelLandValue"), parcelNetValue=el("parcelNetValue"),
-        parcelOwnerRow=el("parcelOwnerRow"), parcelOwner=el("parcelOwner");
+        parcelOwnerRow=el("parcelOwnerRow"), parcelOwner=el("parcelOwner"), parcelSourceText=el("parcelSourceText");
 
   function loadStore(key){
     try{
@@ -607,7 +609,25 @@ small, .help{color:var(--muted);line-height:1.45}
   let parcelLinesEnabled=false, tapParcelEnabled=false;
   let parcelOutlineLayer=null, selectedParcelLayer=null;
   let parcelFetchController=null;
-  const NJ_PARCEL_QUERY="https://maps.nj.gov/arcgis/rest/services/Framework/Cadastral/MapServer/0/query";
+
+  const PARCEL_PROVIDERS=[
+    {
+      id:"NJ",
+      name:"NJ Office of GIS",
+      state:"New Jersey",
+      bounds:{south:38.8,north:41.5,west:-75.7,east:-73.8},
+      query:"https://maps.nj.gov/arcgis/rest/services/Framework/Cadastral/MapServer/0/query",
+      outFields:"PAMS_PIN,PCLBLOCK,PCLLOT,COUNTY,MUN_NAME,PROP_LOC,CALC_ACRE,LAND_VAL,IMPRVT_VAL,NET_VALUE,PROP_CLASS,OWNER_NAME"
+    },
+    {
+      id:"NC",
+      name:"NC OneMap",
+      state:"North Carolina",
+      bounds:{south:33.75,north:36.7,west:-84.4,east:-75.3},
+      query:"https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/FeatureServer/1/query",
+      outFields:"parno,altparno,ownname,landval,improvval,parval,siteadd,scity,gisacres,cntyname,stname,nparno,mapref"
+    }
+  ];
 
   function initLeafletMap(){
     if(leafletMap || typeof L==="undefined") return;
@@ -688,8 +708,11 @@ small, .help{color:var(--muted);line-height:1.45}
   }
 
 
-  function inNewJersey(lat,lon){
-    return lat>=38.8 && lat<=41.5 && lon>=-75.7 && lon<=-73.8;
+  function providerForPoint(lat,lon){
+    return PARCEL_PROVIDERS.find(p=>
+      lat>=p.bounds.south && lat<=p.bounds.north &&
+      lon>=p.bounds.west && lon<=p.bounds.east
+    ) || null;
   }
 
   function money(v){
@@ -702,33 +725,70 @@ small, .help{color:var(--muted);line-height:1.45}
     return v===null || v===undefined ? "" : String(v).trim();
   }
 
-  function arcgisPointUrl(lat,lon){
+  function parcelPointUrl(provider,lat,lon){
     const p=new URLSearchParams({
       f:"geojson",
       geometry:`${lon},${lat}`,
       geometryType:"esriGeometryPoint",
       inSR:"4326",
       spatialRel:"esriSpatialRelIntersects",
-      outFields:"PAMS_PIN,PCLBLOCK,PCLLOT,COUNTY,MUN_NAME,PROP_LOC,CALC_ACRE,LAND_VAL,IMPRVT_VAL,NET_VALUE,PROP_CLASS,OWNER_NAME",
+      outFields:provider.outFields,
       returnGeometry:"true",
       outSR:"4326"
     });
-    return NJ_PARCEL_QUERY+"?"+p.toString();
+    return provider.query+"?"+p.toString();
   }
 
-  function arcgisBoundsUrl(bounds){
+  function parcelBoundsUrl(provider,bounds){
     const p=new URLSearchParams({
       f:"geojson",
       geometry:`${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`,
       geometryType:"esriGeometryEnvelope",
       inSR:"4326",
       spatialRel:"esriSpatialRelIntersects",
-      outFields:"PAMS_PIN",
+      outFields:provider.id==="NJ" ? "PAMS_PIN" : "parno",
       returnGeometry:"true",
       outSR:"4326",
       resultRecordCount:"300"
     });
-    return NJ_PARCEL_QUERY+"?"+p.toString();
+    return provider.query+"?"+p.toString();
+  }
+
+  function normalizeParcel(provider,feature){
+    const a=feature?.properties||{};
+    if(provider.id==="NJ"){
+      return {
+        state:"New Jersey",
+        address:safeText(a.PROP_LOC),
+        city:safeText(a.MUN_NAME),
+        county:safeText(a.COUNTY),
+        block:safeText(a.PCLBLOCK),
+        lot:safeText(a.PCLLOT),
+        parcelId:safeText(a.PAMS_PIN),
+        acres:Number(a.CALC_ACRE),
+        landValue:Number(a.LAND_VAL),
+        totalValue:Number(a.NET_VALUE),
+        owner:safeText(a.OWNER_NAME),
+        provider:provider.name
+      };
+    }
+    if(provider.id==="NC"){
+      return {
+        state:"North Carolina",
+        address:safeText(a.siteadd),
+        city:safeText(a.scity),
+        county:safeText(a.cntyname),
+        block:"",
+        lot:"",
+        parcelId:safeText(a.parno)||safeText(a.altparno)||safeText(a.nparno),
+        acres:Number(a.gisacres),
+        landValue:Number(a.landval),
+        totalValue:Number(a.parval),
+        owner:safeText(a.ownname),
+        provider:provider.name
+      };
+    }
+    return null;
   }
 
   function parcelStyle(selected=false){
@@ -737,49 +797,47 @@ small, .help{color:var(--muted);line-height:1.45}
       : {color:"#ff9c73",weight:2,opacity:.82,fillOpacity:0};
   }
 
-  function showParcelDetails(feature){
-    const a=feature.properties||{};
-    const address=safeText(a.PROP_LOC);
-    const mun=safeText(a.MUN_NAME);
-    const county=safeText(a.COUNTY);
+  function showParcelDetails(provider,feature){
+    const p=normalizeParcel(provider,feature);
+    if(!p) return;
 
-    parcelTitle.textContent=address || "Selected Parcel";
-    parcelSubtitle.textContent=[mun,county && county+" County"].filter(Boolean).join(" • ");
-    parcelBlock.textContent=safeText(a.PCLBLOCK)||"—";
-    parcelLot.textContent=safeText(a.PCLLOT)||"—";
-    parcelId.textContent=safeText(a.PAMS_PIN)||"—";
-
-    const acres=Number(a.CALC_ACRE);
-    parcelAcres.textContent=Number.isFinite(acres)&&acres>0
-      ? acres.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
+    parcelTitle.textContent=p.address || "Selected Parcel";
+    parcelSubtitle.textContent=[p.city,p.county && p.county+" County"].filter(Boolean).join(" • ");
+    parcelState.textContent=p.state||"—";
+    parcelBlock.textContent=p.block||"—";
+    parcelLot.textContent=p.lot||"—";
+    parcelId.textContent=p.parcelId||"—";
+    parcelAcres.textContent=Number.isFinite(p.acres)&&p.acres>0
+      ? p.acres.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
       : "—";
+    parcelCounty.textContent=p.county||"—";
+    parcelMunicipality.textContent=p.city||"—";
+    parcelProvider.textContent=p.provider||"—";
+    parcelLandValue.textContent=money(p.landValue);
+    parcelNetValue.textContent=money(p.totalValue);
 
-    parcelCounty.textContent=county||"—";
-    parcelMunicipality.textContent=mun||"—";
-    parcelLandValue.textContent=money(a.LAND_VAL);
-    parcelNetValue.textContent=money(a.NET_VALUE);
-
-    const owner=safeText(a.OWNER_NAME);
-    parcelOwnerRow.style.display=owner?"block":"none";
-    parcelOwner.textContent=owner||"—";
+    parcelOwnerRow.style.display=p.owner?"block":"none";
+    parcelOwner.textContent=p.owner||"—";
+    parcelSourceText.textContent="Source: "+p.provider+" public government parcel GIS.";
     parcelCard.classList.remove("hidden");
   }
 
   async function identifyParcelAt(lat,lon,{fit=true}={}){
     initLeafletMap();
-    if(!inNewJersey(lat,lon)){
-      mapStatus.innerHTML='<span class="warn">This parcel prototype currently uses New Jersey parcel data. The selected location appears to be outside NJ.</span>';
+    const provider=providerForPoint(lat,lon);
+    if(!provider){
+      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.6 currently supports New Jersey and North Carolina. GPS acreage tools still work here.</span>';
       return;
     }
 
-    mapStatus.textContent="Looking up NJ parcel…";
+    mapStatus.textContent=`Looking up ${provider.state} parcel…`;
     try{
-      const res=await fetch(arcgisPointUrl(lat,lon),{cache:"no-store"});
+      const res=await fetch(parcelPointUrl(provider,lat,lon),{cache:"no-store"});
       if(!res.ok) throw new Error("HTTP "+res.status);
       const data=await res.json();
       const feature=data?.features?.[0];
       if(!feature){
-        mapStatus.innerHTML='<span class="warn">No parcel was found at that point. Try a point farther inside the property.</span>';
+        mapStatus.innerHTML=`<span class="warn">No ${provider.state} parcel was found at that point. Try a point farther inside the property.</span>`;
         return;
       }
 
@@ -788,22 +846,18 @@ small, .help{color:var(--muted);line-height:1.45}
         selectedParcelLayer=null;
       }
       selectedParcelLayer=L.geoJSON(feature,{style:parcelStyle(true)}).addTo(leafletMap);
-      showParcelDetails(feature);
+      showParcelDetails(provider,feature);
 
       if(fit){
         const b=selectedParcelLayer.getBounds();
         if(b.isValid()) leafletMap.fitBounds(b,{padding:[25,25],maxZoom:19});
       }
 
-      const a=feature.properties||{};
-      const label=[
-        safeText(a.PCLBLOCK)&&"Block "+safeText(a.PCLBLOCK),
-        safeText(a.PCLLOT)&&"Lot "+safeText(a.PCLLOT)
-      ].filter(Boolean).join(" • ");
-      mapStatus.innerHTML=`Parcel selected${label?": <b>"+label+"</b>":""}.`;
+      const p=normalizeParcel(provider,feature);
+      mapStatus.innerHTML=`Parcel selected via <b>${provider.name}</b>${p?.parcelId?": "+p.parcelId:""}.`;
     }catch(err){
       console.error(err);
-      mapStatus.innerHTML='<span class="bad">Could not reach the NJ parcel service. Check internet access and try again.</span>';
+      mapStatus.innerHTML=`<span class="bad">Could not reach ${provider.name}. Check internet access and try again.</span>`;
     }
   }
 
@@ -816,9 +870,10 @@ small, .help{color:var(--muted);line-height:1.45}
     }
 
     const c=leafletMap.getCenter();
-    if(!inNewJersey(c.lat,c.lng)){
+    const provider=providerForPoint(c.lat,c.lng);
+    if(!provider){
       if(parcelOutlineLayer){leafletMap.removeLayer(parcelOutlineLayer);parcelOutlineLayer=null}
-      mapStatus.textContent="NJ parcel lines are only available inside New Jersey in this prototype.";
+      mapStatus.textContent="Free parcel lines are not configured for this state yet.";
       return;
     }
 
@@ -826,7 +881,7 @@ small, .help{color:var(--muted);line-height:1.45}
     parcelFetchController=new AbortController();
 
     try{
-      const res=await fetch(arcgisBoundsUrl(leafletMap.getBounds()),{
+      const res=await fetch(parcelBoundsUrl(provider,leafletMap.getBounds()),{
         cache:"no-store",
         signal:parcelFetchController.signal
       });
@@ -839,11 +894,11 @@ small, .help{color:var(--muted);line-height:1.45}
       }
       parcelOutlineLayer=L.geoJSON(data,{style:parcelStyle(false),interactive:false}).addTo(leafletMap);
       if(selectedParcelLayer) selectedParcelLayer.bringToFront();
-      mapStatus.textContent=`Parcel lines loaded${data.features?` (${data.features.length})`:""}.`;
+      mapStatus.textContent=`${provider.state} parcel lines loaded via ${provider.name}${data.features?` (${data.features.length})`:""}.`;
     }catch(err){
       if(err?.name==="AbortError") return;
       console.error(err);
-      mapStatus.innerHTML='<span class="bad">Could not load NJ parcel lines right now.</span>';
+      mapStatus.innerHTML=`<span class="bad">Could not load parcel lines from ${provider.name} right now.</span>`;
     }
   }
 
@@ -896,7 +951,7 @@ small, .help{color:var(--muted);line-height:1.45}
     tapParcelBtn.textContent="Tap Parcel: "+(tapParcelEnabled?"ON":"OFF");
     tapParcelBtn.classList.toggle("primary",tapParcelEnabled);
     mapStatus.textContent=tapParcelEnabled
-      ? "Tap anywhere inside a New Jersey parcel to identify it."
+      ? "Tap inside a supported parcel to identify it."
       : "Tap-to-identify parcel mode is off.";
   });
 
