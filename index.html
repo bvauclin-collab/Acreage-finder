@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.7.1</title>
+<title>Acreage Finder v1.7.2</title>
 <style>
 :root{
   color-scheme:dark;
@@ -331,7 +331,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.7.1</span></h1>
+  <h1>Acreage Finder <span class="version">v1.7.2</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -455,7 +455,7 @@ small, .help{color:var(--muted);line-height:1.45}
     </div>
 
     <div id="mapStatus" class="status">Tap Locate Me if needed. Use the Satellite/Street button above the map to switch imagery.</div>
-    <div class="map-note2">Free parcel engine v1.7 currently supports New Jersey, North Carolina, and Tennessee. GPS acreage and coordinate navigation remain nationwide.</div>
+    <div class="map-note2">Free parcel engine v1.7.2 supports New Jersey, North Carolina, and Tennessee with county routing for Davidson, Rutherford, and Williamson. GPS acreage and coordinate navigation remain nationwide.</div>
   </section>
 
   <section id="finderView" class="view">
@@ -628,6 +628,36 @@ small, .help{color:var(--muted);line-height:1.45}
       outFields:"parno,altparno,ownname,landval,improvval,parval,siteadd,scity,gisacres,cntyname,stname,nparno,mapref"
     },
     {
+      id:"TN_DAVIDSON",
+      name:"Metro Nashville / Davidson County GIS",
+      state:"Tennessee",
+      county:"Davidson",
+      bounds:{south:35.95,north:36.43,west:-87.08,east:-86.50},
+      query:"https://maps.nashville.gov/arcgis/rest/services/Cadastral/Parcels/MapServer/0/query",
+      outFields:"APN,Owner,PropAddr,PropCity,Acres,LandAppr,TotlAppr",
+      format:"geojson"
+    },
+    {
+      id:"TN_RUTHERFORD",
+      name:"Rutherford County GIS",
+      state:"Tennessee",
+      county:"Rutherford",
+      bounds:{south:35.60,north:36.12,west:-86.75,east:-86.10},
+      query:"https://maps.rutherfordcountytn.gov/server/rest/services/CoreServices/Parcels/MapServer/0/query",
+      outFields:"GISLINK,STREETADDRESS,CITY,CALCACRES,DEEDACRES,LOT,COUNTY",
+      format:"geojson"
+    },
+    {
+      id:"TN_WILLIAMSON",
+      name:"Williamson County GIS",
+      state:"Tennessee",
+      county:"Williamson",
+      bounds:{south:35.72,north:36.05,west:-87.25,east:-86.58},
+      query:"https://arcgis2.williamsoncounty-tn.gov/arcgis/rest/services/IDT/DataPull/MapServer/10/query",
+      outFields:"*",
+      format:"esrijson"
+    },
+    {
       id:"TN",
       name:"Tennessee Comptroller Parcel GIS",
       state:"Tennessee",
@@ -743,7 +773,7 @@ small, .help{color:var(--muted);line-height:1.45}
 
   function parcelPointUrl(provider,lat,lon){
     const p=new URLSearchParams({
-      f:"geojson",
+      f:provider.format==="esrijson" ? "json" : "geojson",
       geometry:`${lon},${lat}`,
       geometryType:"esriGeometryPoint",
       inSR:"4326",
@@ -757,17 +787,39 @@ small, .help{color:var(--muted);line-height:1.45}
 
   function parcelBoundsUrl(provider,bounds){
     const p=new URLSearchParams({
-      f:"geojson",
+      f:provider.format==="esrijson" ? "json" : "geojson",
       geometry:`${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`,
       geometryType:"esriGeometryEnvelope",
       inSR:"4326",
       spatialRel:"esriSpatialRelIntersects",
-      outFields:provider.id==="NJ" ? "PAMS_PIN" : provider.id==="NC" ? "parno" : "GISLINK,CALC_ACRE",
+      outFields:
+        provider.id==="NJ" ? "PAMS_PIN" :
+        provider.id==="NC" ? "parno" :
+        provider.id==="TN_DAVIDSON" ? "APN" :
+        provider.id==="TN_RUTHERFORD" ? "GISLINK" :
+        provider.id==="TN_WILLIAMSON" ? "GISLINK,parcel_id" :
+        "GISLINK,CALC_ACRE",
       returnGeometry:"true",
       outSR:"4326",
       resultRecordCount:"300"
     });
     return provider.query+"?"+p.toString();
+  }
+
+
+  function arcgisDataToGeoJSON(provider,data){
+    if(provider.format!=="esrijson") return data;
+    const features=(data?.features||[]).map(f=>{
+      const g=f.geometry||{};
+      let geometry=null;
+      if(Array.isArray(g.rings)){
+        geometry={type:"Polygon",coordinates:g.rings};
+      }else if(Number.isFinite(g.x)&&Number.isFinite(g.y)){
+        geometry={type:"Point",coordinates:[g.x,g.y]};
+      }
+      return {type:"Feature",properties:f.attributes||{},geometry};
+    });
+    return {type:"FeatureCollection",features};
   }
 
   function normalizeParcel(provider,feature){
@@ -801,6 +853,54 @@ small, .help{color:var(--muted);line-height:1.45}
         landValue:Number(a.landval),
         totalValue:Number(a.parval),
         owner:safeText(a.ownname),
+        provider:provider.name
+      };
+    }
+    if(provider.id==="TN_DAVIDSON"){
+      return {
+        state:"Tennessee",
+        address:safeText(a.PropAddr),
+        city:safeText(a.PropCity)||"Nashville",
+        county:"Davidson",
+        block:"",
+        lot:"",
+        parcelId:safeText(a.APN),
+        acres:Number(a.Acres),
+        landValue:Number(a.LandAppr),
+        totalValue:Number(a.TotlAppr),
+        owner:safeText(a.Owner),
+        provider:provider.name
+      };
+    }
+    if(provider.id==="TN_RUTHERFORD"){
+      return {
+        state:"Tennessee",
+        address:safeText(a.STREETADDRESS),
+        city:safeText(a.CITY),
+        county:"Rutherford",
+        block:"",
+        lot:safeText(a.LOT),
+        parcelId:safeText(a.GISLINK),
+        acres:Number(a.CALCACRES)||Number(a.DEEDACRES),
+        landValue:NaN,
+        totalValue:NaN,
+        owner:"",
+        provider:provider.name
+      };
+    }
+    if(provider.id==="TN_WILLIAMSON"){
+      return {
+        state:"Tennessee",
+        address:safeText(a.ADDRESS),
+        city:safeText(a.CITY),
+        county:"Williamson",
+        block:"",
+        lot:"",
+        parcelId:safeText(a.parcel_id)||safeText(a.GISLINK),
+        acres:NaN,
+        landValue:NaN,
+        totalValue:NaN,
+        owner:[safeText(a.owner1),safeText(a.owner2)].filter(Boolean).join(" / "),
         provider:provider.name
       };
     }
@@ -858,15 +958,16 @@ small, .help{color:var(--muted);line-height:1.45}
     initLeafletMap();
     const provider=providerForPoint(lat,lon);
     if(!provider){
-      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.7 currently supports New Jersey, North Carolina, and Tennessee. GPS acreage tools still work here.</span>';
+      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.7.2 currently supports New Jersey, North Carolina, and Tennessee. GPS acreage tools still work here.</span>';
       return;
     }
 
-    mapStatus.textContent=`Looking up ${provider.state} parcel…`;
+    mapStatus.textContent=`Looking up parcel via ${provider.name}…`;
     try{
       const res=await fetch(parcelPointUrl(provider,lat,lon),{cache:"no-store"});
       if(!res.ok) throw new Error("HTTP "+res.status);
-      const data=await res.json();
+      const raw=await res.json();
+      const data=arcgisDataToGeoJSON(provider,raw);
       const feature=data?.features?.[0];
       if(!feature){
         mapStatus.innerHTML=`<span class="warn">No ${provider.state} parcel was found at that point. Try a point farther inside the property.</span>`;
@@ -918,7 +1019,8 @@ small, .help{color:var(--muted);line-height:1.45}
         signal:parcelFetchController.signal
       });
       if(!res.ok) throw new Error("HTTP "+res.status);
-      const data=await res.json();
+      const raw=await res.json();
+      const data=arcgisDataToGeoJSON(provider,raw);
 
       if(parcelOutlineLayer){
         leafletMap.removeLayer(parcelOutlineLayer);
