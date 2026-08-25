@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.8</title>
+<title>Acreage Finder v1.9</title>
 <style>
 :root{
   color-scheme:dark;
@@ -331,7 +331,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.8</span></h1>
+  <h1>Acreage Finder <span class="version">v1.9</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -455,7 +455,7 @@ small, .help{color:var(--muted);line-height:1.45}
     </div>
 
     <div id="mapStatus" class="status">Tap Locate Me if needed. Use the Satellite/Street button above the map to switch imagery.</div>
-    <div class="map-note2">Free parcel engine v1.8 supports New Jersey, North Carolina, Tennessee, Virginia, and Pennsylvania. GPS acreage and coordinate navigation remain nationwide.</div>
+    <div class="map-note2">Free parcel engine v1.9 supports New Jersey, North Carolina, Tennessee, Virginia, Pennsylvania, Maryland, and Delaware. GPS acreage and coordinate navigation remain nationwide.</div>
   </section>
 
   <section id="finderView" class="view">
@@ -676,6 +676,24 @@ small, .help{color:var(--muted);line-height:1.45}
       format:"geojson"
     },
     {
+      id:"MD",
+      name:"Maryland iMAP Parcels",
+      state:"Maryland",
+      bounds:{south:37.85,north:39.75,west:-79.50,east:-75.00},
+      query:"https://geodata.md.gov/imap/rest/services/PlanningCadastre/MD_PropertyData/MapServer/0/query",
+      outFields:"*",
+      format:"geojson"
+    },
+    {
+      id:"DE",
+      name:"Delaware FirstMap Parcels",
+      state:"Delaware",
+      bounds:{south:38.44,north:39.85,west:-75.79,east:-75.04},
+      query:"https://enterprise.firstmap.delaware.gov/arcgis/rest/services/PlanningCadastre/DE_Parcels/MapServer/0/query",
+      outFields:"*",
+      format:"geojson"
+    },
+    {
       id:"TN",
       name:"Tennessee Comptroller Parcel GIS",
       state:"Tennessee",
@@ -818,6 +836,8 @@ small, .help{color:var(--muted);line-height:1.45}
         provider.id==="TN_WILLIAMSON" ? "GISLINK,parcel_id" :
         provider.id==="VA" ? "PARCELID,LOCALITY,VGIN_Locality_Name" :
         provider.id==="PA" ? "PIN,Source" :
+        provider.id==="MD" ? "*" :
+        provider.id==="DE" ? "*" :
         "GISLINK,CALC_ACRE",
       returnGeometry:"true",
       outSR:"4326",
@@ -840,6 +860,16 @@ small, .help{color:var(--muted);line-height:1.45}
       return {type:"Feature",properties:f.attributes||{},geometry};
     });
     return {type:"FeatureCollection",features};
+  }
+
+  function pickAttr(a,...keys){
+    const names=Object.keys(a||{});
+    for(const key of keys){
+      if(a && a[key]!==undefined && a[key]!==null && String(a[key]).trim()!=="") return a[key];
+      const found=names.find(n=>n.toLowerCase()===String(key).toLowerCase());
+      if(found && a[found]!==undefined && a[found]!==null && String(a[found]).trim()!=="") return a[found];
+    }
+    return "";
   }
 
   function normalizeParcel(provider,feature){
@@ -956,6 +986,38 @@ small, .help{color:var(--muted);line-height:1.45}
         provider:provider.name
       };
     }
+    if(provider.id==="MD"){
+      return {
+        state:"Maryland",
+        address:safeText(pickAttr(a,"PREMISE_ADDR","ADDRESS","SITEADDR","SITE_ADDR","STRTADDR")),
+        city:safeText(pickAttr(a,"PREMISE_CITY","CITY","SITUS_CITY")),
+        county:safeText(pickAttr(a,"COUNTY","COUNTYNAME","JURISDICTION","JURSCODE")),
+        block:safeText(pickAttr(a,"BLOCK")),
+        lot:safeText(pickAttr(a,"LOT")),
+        parcelId:safeText(pickAttr(a,"ACCTID","ACCOUNT_ID","PARCEL_ID","PARCELID","PIN","MAP_PARCEL")),
+        acres:Number(pickAttr(a,"ACRES","GIS_ACRES","CALC_ACRE","LAND_AREA")),
+        landValue:Number(pickAttr(a,"LAND_VALUE","LANDVAL","LAND_VAL")),
+        totalValue:Number(pickAttr(a,"TOTAL_VALUE","TOTALVAL","ASSESSMENT","ASSESSED_VALUE")),
+        owner:safeText(pickAttr(a,"OWNER_NAME","OWNERNAME","OWNER","OWNNAME")),
+        provider:provider.name
+      };
+    }
+    if(provider.id==="DE"){
+      return {
+        state:"Delaware",
+        address:safeText(pickAttr(a,"ADDRESS","SITE_ADDRESS","SITEADDR","LOCATION")),
+        city:safeText(pickAttr(a,"CITY","SITE_CITY","MUNICIPALITY")),
+        county:safeText(pickAttr(a,"COUNTY","COUNTY_NAME","CNTYNAME")),
+        block:safeText(pickAttr(a,"BLOCK")),
+        lot:safeText(pickAttr(a,"LOT")),
+        parcelId:safeText(pickAttr(a,"PARCEL_ID","PARCELID","PARCEL","PIN","MAP_NUMBER","MAPNO")),
+        acres:Number(pickAttr(a,"ACRES","GIS_ACRES","CALC_ACRE","AREA_ACRES")),
+        landValue:Number(pickAttr(a,"LAND_VALUE","LANDVAL","LAND_VAL")),
+        totalValue:Number(pickAttr(a,"TOTAL_VALUE","TOTALVAL","ASSESSED_VALUE","ASSESSMENT")),
+        owner:safeText(pickAttr(a,"OWNER_NAME","OWNERNAME","OWNER","OWNNAME")),
+        provider:provider.name
+      };
+    }
     if(provider.id==="TN"){
       return {
         state:"Tennessee",
@@ -1010,7 +1072,7 @@ small, .help{color:var(--muted);line-height:1.45}
     initLeafletMap();
     const provider=providerForPoint(lat,lon);
     if(!provider){
-      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.8 currently supports New Jersey, North Carolina, Tennessee, Virginia, and Pennsylvania. GPS acreage tools still work here.</span>';
+      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.9 currently supports New Jersey, North Carolina, Tennessee, Virginia, Pennsylvania, Maryland, and Delaware. GPS acreage tools still work here.</span>';
       return;
     }
 
