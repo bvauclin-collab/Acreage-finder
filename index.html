@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.3</title>
+<title>Acreage Finder v1.4</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+ integrity="sha256-p4NxAoJBhIINfQ3ynHT2KrzX+hrB3h8a9HfQ85u6QqQ=" crossorigin="">
 <style>
 :root{
   color-scheme:dark;
@@ -115,6 +117,18 @@ small, .help{color:var(--muted);line-height:1.45}
 }
 .name-row button{min-height:46px}
 
+
+/* Interactive map */
+#leafletMap{width:100%;height:58vh;min-height:390px;max-height:720px;border-radius:18px;overflow:hidden;border:1px solid #20344e;background:#081523}
+.map-toolbar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.map-toolbar button{min-height:44px;font-size:14px}
+.map-info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.map-info-grid .card{padding:10px}.map-info-grid .value{font-size:18px}
+.map-legend{margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend-dot,.legend-line{display:inline-block;vertical-align:middle;margin-right:5px}
+.legend-dot{width:10px;height:10px;border-radius:50%}.legend-line{width:18px;height:3px;border-radius:3px}
+.legend-you{background:#2b9cff}.legend-saved{background:#ffd166}.legend-boundary{background:#79c7ff}
+.map-note2{font-size:12px;color:var(--muted);line-height:1.4;margin-top:10px}
 @media(max-width:430px){
   .value{font-size:24px}
   svg{height:285px}
@@ -127,11 +141,12 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.3</span></h1>
+  <h1>Acreage Finder <span class="version">v1.4</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
-  <section class="mode-tabs" aria-label="App mode">
+  <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
     <button id="acreageTab" class="active" type="button">Acreage</button>
+    <button id="mapTab" type="button">Map</button>
     <button id="finderTab" type="button">Find Coordinate</button>
   </section>
 
@@ -192,6 +207,28 @@ small, .help{color:var(--muted);line-height:1.45}
         <p>On iPhone, browser GPS normally requires this page to be served from an <b>HTTPS</b> website. Opening the HTML directly as a local <code>file://</code> may not allow location access.</p>
       </div>
     </details>
+  </section>
+
+
+  <section id="mapView" class="view">
+    <div class="map-toolbar">
+      <button id="locateMapBtn" class="primary" type="button">Locate Me</button>
+      <button id="followMapBtn" class="secondary" type="button">Follow: ON</button>
+      <button id="fitMapBtn" class="secondary" type="button">Fit Property</button>
+    </div>
+    <div id="leafletMap" aria-label="Interactive property map"></div>
+    <div class="map-info-grid">
+      <div class="card"><div id="mapGpsStatus" class="value">—</div><div class="label">GPS</div></div>
+      <div class="card"><div id="mapAccuracy" class="value">—</div><div class="label">Accuracy</div></div>
+      <div class="card"><div id="mapSavedCount" class="value">0</div><div class="label">Saved Points</div></div>
+    </div>
+    <div class="map-legend">
+      <span><span class="legend-dot legend-you"></span>You</span>
+      <span><span class="legend-dot legend-saved"></span>Saved Coordinate</span>
+      <span><span class="legend-line legend-boundary"></span>Walked Boundary</span>
+    </div>
+    <div id="mapStatus" class="status">Tap Locate Me. Use the layer control in the upper-right to switch between street and satellite imagery.</div>
+    <div class="map-note2">This map is a field/navigation aid. GPS location and imagery are not survey-grade property boundaries.</div>
   </section>
 
   <section id="finderView" class="view">
@@ -260,6 +297,8 @@ small, .help{color:var(--muted);line-height:1.45}
   </section>
 </main>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+ integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 (() => {
   "use strict";
@@ -267,8 +306,8 @@ small, .help{color:var(--muted);line-height:1.45}
   const el = id => document.getElementById(id);
 
   // Shared UI
-  const acreageTab=el("acreageTab"), finderTab=el("finderTab"),
-        acreageView=el("acreageView"), finderView=el("finderView");
+  const acreageTab=el("acreageTab"), mapTab=el("mapTab"), finderTab=el("finderTab"),
+        acreageView=el("acreageView"), mapView=el("mapView"), finderView=el("finderView");
 
   const saveAcreageBtn=el("saveAcreageBtn"), acreageSaveName=el("acreageSaveName"),
         savedAcreageList=el("savedAcreageList"), saveCoordinateBtn=el("saveCoordinateBtn"),
@@ -276,6 +315,10 @@ small, .help{color:var(--muted);line-height:1.45}
 
   const STORAGE_ACREAGE="acreageFinder.savedAcreage.v1";
   const STORAGE_COORDS="acreageFinder.savedCoordinates.v1";
+  const locateMapBtn=el("locateMapBtn"), followMapBtn=el("followMapBtn"),
+        fitMapBtn=el("fitMapBtn"), mapGpsStatus=el("mapGpsStatus"),
+        mapAccuracy=el("mapAccuracy"), mapSavedCount=el("mapSavedCount"),
+        mapStatus=el("mapStatus");
 
   function loadStore(key){
     try{
@@ -295,15 +338,132 @@ small, .help{color:var(--muted);line-height:1.45}
   }
 
   acreageTab.addEventListener("click",()=>setMode("acreage"));
+  mapTab.addEventListener("click",()=>setMode("map"));
   finderTab.addEventListener("click",()=>setMode("finder"));
 
   function setMode(mode){
-    const acreage=mode==="acreage";
+    const acreage=mode==="acreage", map=mode==="map", finder=mode==="finder";
     acreageTab.classList.toggle("active",acreage);
-    finderTab.classList.toggle("active",!acreage);
+    mapTab.classList.toggle("active",map);
+    finderTab.classList.toggle("active",finder);
     acreageView.classList.toggle("active",acreage);
-    finderView.classList.toggle("active",!acreage);
+    mapView.classList.toggle("active",map);
+    finderView.classList.toggle("active",finder);
+    if(map){
+      setTimeout(()=>{ initLeafletMap(); leafletMap.invalidateSize(); refreshMapOverlays(); },50);
+    }
   }
+
+
+  // ---------- Interactive Map (v1.4) ----------
+  let leafletMap=null, streetLayer=null, satelliteLayer=null;
+  let userMarker=null, accuracyCircle=null, walkedBoundaryLayer=null, savedMarkersLayer=null;
+  let mapWatchId=null, mapFollow=true, mapHasCentered=false;
+
+  function initLeafletMap(){
+    if(leafletMap || typeof L==="undefined") return;
+    leafletMap=L.map("leafletMap").setView([39.5,-98.35],4);
+    streetLayer=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      maxZoom:19, attribution:"&copy; OpenStreetMap contributors"
+    });
+    satelliteLayer=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{
+      maxZoom:19, attribution:"Tiles &copy; Esri"
+    });
+    streetLayer.addTo(leafletMap);
+    L.control.layers({"Street":streetLayer,"Satellite":satelliteLayer},{},{collapsed:true}).addTo(leafletMap);
+    savedMarkersLayer=L.layerGroup().addTo(leafletMap);
+    refreshMapOverlays();
+  }
+
+  function getAnyCurrentFix(){ return finderFix || currentFix || null; }
+
+  function updateUserOnMap(fix, center=false){
+    if(!leafletMap || !fix) return;
+    const ll=[fix.lat,fix.lon], radius=Math.max(1,Number(fix.accuracy)||1);
+    if(!userMarker){
+      userMarker=L.circleMarker(ll,{radius:7,weight:3,color:"#fff",fillColor:"#2b9cff",fillOpacity:1})
+        .addTo(leafletMap).bindPopup("Your GPS position");
+    } else userMarker.setLatLng(ll);
+    if(!accuracyCircle){
+      accuracyCircle=L.circle(ll,{radius,weight:1,color:"#2b9cff",fillColor:"#2b9cff",fillOpacity:.10}).addTo(leafletMap);
+    } else { accuracyCircle.setLatLng(ll); accuracyCircle.setRadius(radius); }
+    const ft=radius*3.280839895;
+    mapGpsStatus.textContent="ACTIVE"; mapGpsStatus.className="value good";
+    mapAccuracy.textContent="±"+Math.round(ft)+" ft";
+    mapAccuracy.className="value "+(ft<=15?"good":ft<=40?"warn":"bad");
+    if(mapFollow && (center || !mapHasCentered)){
+      leafletMap.setView(ll,18); mapHasCentered=true;
+    }
+  }
+
+  function refreshWalkedBoundary(){
+    if(!leafletMap) return;
+    if(walkedBoundaryLayer){ leafletMap.removeLayer(walkedBoundaryLayer); walkedBoundaryLayer=null; }
+    if(!points || points.length<2) return;
+    const ll=points.map(p=>[p.lat,p.lon]);
+    walkedBoundaryLayer=(finished && points.length>=3)
+      ? L.polygon(ll,{weight:4,color:"#79c7ff",fillColor:"#59b7ff",fillOpacity:.13}).addTo(leafletMap)
+      : L.polyline(ll,{weight:4,color:"#79c7ff",opacity:.95}).addTo(leafletMap);
+  }
+
+  function refreshSavedMarkers(){
+    if(!leafletMap || !savedMarkersLayer) return;
+    savedMarkersLayer.clearLayers();
+    const saved=loadStore(STORAGE_COORDS);
+    mapSavedCount.textContent=String(saved.length);
+    saved.forEach(item=>{
+      const marker=L.circleMarker([Number(item.lat),Number(item.lon)],{
+        radius:6,weight:2,color:"#333",fillColor:"#ffd166",fillOpacity:1
+      });
+      const name=String(item.name||"Saved Point").replace(/[<>&]/g,"");
+      marker.bindPopup(`<b>${name}</b><br>${Number(item.lat).toFixed(7)}, ${Number(item.lon).toFixed(7)}`);
+      marker.addTo(savedMarkersLayer);
+    });
+  }
+
+  function refreshMapOverlays(){
+    if(!leafletMap) return;
+    refreshWalkedBoundary(); refreshSavedMarkers();
+    const fix=getAnyCurrentFix(); if(fix) updateUserOnMap(fix,false);
+  }
+
+  function mapPositionSuccess(pos){
+    const c=pos.coords;
+    const fix={lat:c.latitude,lon:c.longitude,accuracy:c.accuracy,altitude:c.altitude,heading:c.heading,speed:c.speed};
+    currentFix=fix; initLeafletMap(); updateUserOnMap(fix,true);
+    mapStatus.innerHTML=`GPS active. Accuracy about <b>${Math.round(c.accuracy*3.280839895)} ft</b>.`;
+  }
+
+  function mapPositionError(err){
+    mapGpsStatus.textContent="ERROR"; mapGpsStatus.className="value bad";
+    mapStatus.innerHTML=`<span class="bad">${geoErrorMessage(err)}</span>`;
+  }
+
+  locateMapBtn.addEventListener("click",()=>{
+    initLeafletMap();
+    if(!navigator.geolocation){ mapStatus.innerHTML='<span class="bad">Geolocation is not supported.</span>'; return; }
+    if(mapWatchId!==null) navigator.geolocation.clearWatch(mapWatchId);
+    mapStatus.textContent="Requesting high-accuracy GPS…";
+    mapWatchId=navigator.geolocation.watchPosition(mapPositionSuccess,mapPositionError,{
+      enableHighAccuracy:true,maximumAge:0,timeout:15000
+    });
+  });
+
+  followMapBtn.addEventListener("click",()=>{
+    mapFollow=!mapFollow; followMapBtn.textContent="Follow: "+(mapFollow?"ON":"OFF");
+    const fix=getAnyCurrentFix();
+    if(mapFollow && fix && leafletMap) leafletMap.setView([fix.lat,fix.lon],Math.max(leafletMap.getZoom(),18));
+  });
+
+  fitMapBtn.addEventListener("click",()=>{
+    initLeafletMap();
+    const bounds=[];
+    if(points) points.forEach(p=>bounds.push([p.lat,p.lon]));
+    loadStore(STORAGE_COORDS).forEach(p=>bounds.push([Number(p.lat),Number(p.lon)]));
+    const fix=getAnyCurrentFix(); if(fix) bounds.push([fix.lat,fix.lon]);
+    if(!bounds.length){ mapStatus.textContent="Nothing to fit yet. Record a boundary, save a point, or tap Locate Me."; return; }
+    leafletMap.fitBounds(bounds,{padding:[30,30],maxZoom:18});
+  });
 
   // ---------- Acreage mode (v1.0 behavior preserved) ----------
   const acresEl = el("acres"), areaSqFtEl = el("areaSqFt"), perimeterEl = el("perimeter"),
@@ -403,6 +563,7 @@ small, .help{color:var(--muted);line-height:1.45}
     geoBtn.disabled=points.length<3;
     saveAcreageBtn.disabled=points.length<3;
     renderPlot();
+    if(leafletMap) refreshMapOverlays();
   }
 
   function renderPlot(){
@@ -826,6 +987,7 @@ small, .help{color:var(--muted);line-height:1.45}
   function renderSavedCoordinates(){
     const saved=loadStore(STORAGE_COORDS);
     savedCoordinateList.innerHTML="";
+    if(leafletMap) refreshSavedMarkers();
     if(!saved.length){
       savedCoordinateList.innerHTML='<div class="empty-saved">No saved coordinates yet.</div>';
       return;
