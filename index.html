@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.9.2</title>
+<title>Acreage Finder v1.9.3</title>
 <style>
 :root{
   color-scheme:dark;
@@ -327,11 +327,73 @@ small, .help{color:var(--muted);line-height:1.45}
 .parcel-warning{margin-top:10px;color:var(--muted);font-size:11px;line-height:1.35}
 .parcel-source{margin-top:8px;font-size:10px;color:var(--muted)}
 
+
+/* v1.9.3 — Acreage map overlay + map address search */
+.acreage-map-toolbar{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin-top:12px;
+}
+.acreage-map-toolbar button{min-height:44px;font-size:14px}
+#acreageLeafletMap{
+  width:100%;
+  height:330px;
+  margin-top:10px;
+  border-radius:18px;
+  overflow:hidden;
+  border:1px solid #20344e;
+  background:#081523;
+  display:none;
+  position:relative;
+}
+#acreageLeafletMap.active{display:block}
+.map-search{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:8px;
+  margin-bottom:10px;
+}
+.map-search input{
+  min-height:46px;
+  border-radius:12px;
+  border:1px solid #2a415d;
+  background:#081523;
+  color:var(--text);
+  padding:0 12px;
+  font-size:15px;
+}
+.map-search button{
+  min-height:46px;
+  padding:8px 14px;
+}
+.search-results{
+  display:grid;
+  gap:6px;
+  margin-bottom:10px;
+}
+.search-result{
+  width:100%;
+  min-height:42px;
+  text-align:left;
+  font-size:13px;
+  font-weight:600;
+  background:#10233a;
+  border:1px solid #20344e;
+  border-radius:11px;
+  padding:9px 11px;
+}
+.search-result small{
+  display:block;
+  margin-top:3px;
+  font-weight:400;
+}
+
 </style>
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.9.2</span></h1>
+  <h1>Acreage Finder <span class="version">v1.9.3</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -363,6 +425,13 @@ small, .help{color:var(--muted);line-height:1.45}
       </svg>
       <div class="map-note">Relative GPS plot • not a survey map</div>
     </section>
+    <section class="acreage-map-toolbar">
+      <button id="acreageRealMapBtn" class="secondary" type="button">Map Overlay: OFF</button>
+      <button id="acreageLayerBtn" class="secondary" type="button">Satellite</button>
+    </section>
+    <div id="acreageLeafletMap" aria-label="Acreage boundary map">
+      <div class="map-attribution">© OpenStreetMap contributors</div>
+    </div>
 
     <section class="controls">
       <button id="startBtn" class="primary" type="button">Start Walking</button>
@@ -401,6 +470,11 @@ small, .help{color:var(--muted);line-height:1.45}
 
 
   <section id="mapView" class="view">
+    <div class="map-search">
+      <input id="mapSearchInput" autocomplete="street-address" placeholder="Search address or place">
+      <button id="mapSearchBtn" class="primary" type="button">Search</button>
+    </div>
+    <div id="mapSearchResults" class="search-results"></div>
     <div class="map-toolbar">
       <button id="locateMapBtn" class="primary" type="button">Locate Me</button>
       <button id="followMapBtn" class="secondary" type="button">Follow: ON</button>
@@ -455,7 +529,7 @@ small, .help{color:var(--muted);line-height:1.45}
     </div>
 
     <div id="mapStatus" class="status">Tap Locate Me if needed. Use the Satellite/Street button above the map to switch imagery.</div>
-    <div class="map-note2">Free parcel engine v1.9.2 supports New Jersey, North Carolina, Tennessee, Virginia, Pennsylvania, Maryland, and Delaware. GPS acreage and coordinate navigation remain nationwide.</div>
+    <div class="map-note2">Free parcel engine v1.9.3 supports New Jersey, North Carolina, Tennessee, Virginia, Pennsylvania, Maryland, and Delaware. GPS acreage and coordinate navigation remain nationwide.</div>
   </section>
 
   <section id="finderView" class="view">
@@ -553,7 +627,8 @@ small, .help{color:var(--muted);line-height:1.45}
         parcelLot=el("parcelLot"), parcelId=el("parcelId"), parcelAcres=el("parcelAcres"),
         parcelState=el("parcelState"), parcelCounty=el("parcelCounty"), parcelMunicipality=el("parcelMunicipality"), parcelProvider=el("parcelProvider"),
         parcelLandValue=el("parcelLandValue"), parcelNetValue=el("parcelNetValue"),
-        parcelOwnerRow=el("parcelOwnerRow"), parcelOwner=el("parcelOwner"), parcelSourceText=el("parcelSourceText");
+        parcelOwnerRow=el("parcelOwnerRow"), parcelOwner=el("parcelOwner"), parcelSourceText=el("parcelSourceText"),
+        mapSearchInput=el("mapSearchInput"), mapSearchBtn=el("mapSearchBtn"), mapSearchResults=el("mapSearchResults");
 
   function loadStore(key){
     try{
@@ -789,6 +864,73 @@ small, .help{color:var(--muted);line-height:1.45}
     const fix=getAnyCurrentFix(); if(fix) updateUserOnMap(fix,false);
   }
 
+
+
+  async function searchMapAddress(){
+    const q=mapSearchInput.value.trim();
+    if(!q){
+      mapStatus.innerHTML='<span class="warn">Enter an address or place to search.</span>';
+      return;
+    }
+
+    mapSearchResults.innerHTML="";
+    mapStatus.textContent="Searching address…";
+
+    try{
+      const url="https://nominatim.openstreetmap.org/search?"+
+        new URLSearchParams({
+          q,
+          format:"jsonv2",
+          limit:"5",
+          addressdetails:"1",
+          countrycodes:"us"
+        }).toString();
+
+      const res=await fetch(url,{
+        headers:{"Accept":"application/json"},
+        cache:"no-store"
+      });
+
+      if(!res.ok) throw new Error("Search HTTP "+res.status);
+      const results=await res.json();
+
+      if(!Array.isArray(results) || !results.length){
+        mapStatus.innerHTML='<span class="warn">No matching U.S. address or place was found.</span>';
+        return;
+      }
+
+      results.forEach(r=>{
+        const btn=document.createElement("button");
+        btn.type="button";
+        btn.className="search-result";
+        btn.innerHTML=`${String(r.display_name||"Result").replace(/</g,"&lt;").replace(/>/g,"&gt;")}`;
+        btn.addEventListener("click",()=>{
+          const lat=Number(r.lat), lon=Number(r.lon);
+          if(!Number.isFinite(lat)||!Number.isFinite(lon)) return;
+          initLeafletMap();
+          leafletMap.setView([lat,lon],18);
+          mapFollow=false;
+          followMapBtn.textContent="Follow: OFF";
+          mapSearchResults.innerHTML="";
+          mapStatus.textContent="Address located. Turn on Parcel Lines or Tap Parcel to inspect the property.";
+        });
+        mapSearchResults.appendChild(btn);
+      });
+
+      mapStatus.textContent=`Found ${results.length} matching location${results.length===1?"":"s"}.`;
+    }catch(err){
+      console.error(err);
+      mapStatus.innerHTML='<span class="bad">Address search is temporarily unavailable. Try again shortly.</span>';
+    }
+  }
+
+  mapSearchBtn.addEventListener("click",searchMapAddress);
+  mapSearchInput.addEventListener("keydown",e=>{
+    if(e.key==="Enter"){
+      e.preventDefault();
+      searchMapAddress();
+    }
+  });
 
   function providersForPoint(lat,lon){
     return PARCEL_PROVIDERS.filter(p=>
@@ -1346,13 +1488,17 @@ small, .help{color:var(--muted);line-height:1.45}
         accuracyEl = el("accuracy"), statusEl = el("status"), startBtn = el("startBtn"),
         addBtn = el("addBtn"), stopBtn = el("stopBtn"), undoBtn = el("undoBtn"),
         clearBtn = el("clearBtn"), geoBtn = el("geoBtn"), track = el("track"),
-        poly = el("poly"), startDot = el("startDot"), currentDot = el("currentDot");
+        poly = el("poly"), startDot = el("startDot"), currentDot = el("currentDot"),
+        acreageRealMapBtn=el("acreageRealMapBtn"), acreageLayerBtn=el("acreageLayerBtn");
 
   let acreageWatchId = null;
   let points = [];
   let currentFix = null;
   let walking = false;
   let finished = false;
+  let acreageRealMap=null, acreageStreetLayer=null, acreageSatelliteLayer=null;
+  let acreageTrackLayer=null, acreageUserMarker=null, acreageAccuracyCircle=null;
+  let acreageMapEnabled=false, acreageSatellite=false, acreageMapCentered=false;
   const minAutoDistanceM = 2.5;
   const maxUsefulAccuracyM = 25;
 
@@ -1380,6 +1526,109 @@ small, .help{color:var(--muted);line-height:1.45}
     const dirs=["N","NE","E","SE","S","SW","W","NW"];
     return dirs[Math.round(norm360(d)/45)%8];
   }
+
+
+  function initAcreageRealMap(){
+    if(acreageRealMap || typeof L==="undefined") return;
+    acreageRealMap=L.map("acreageLeafletMap",{attributionControl:false}).setView([39.5,-98.35],4);
+
+    acreageStreetLayer=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      maxZoom:19
+    });
+    acreageSatelliteLayer=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{
+      maxZoom:19
+    });
+
+    acreageStreetLayer.addTo(acreageRealMap);
+    setTimeout(()=>acreageRealMap&&acreageRealMap.invalidateSize(true),200);
+  }
+
+  function updateAcreageRealMap(){
+    if(!acreageMapEnabled) return;
+    initAcreageRealMap();
+    if(!acreageRealMap) return;
+
+    if(acreageTrackLayer){
+      acreageRealMap.removeLayer(acreageTrackLayer);
+      acreageTrackLayer=null;
+    }
+
+    if(points.length>=2){
+      const ll=points.map(p=>[p.lat,p.lon]);
+      acreageTrackLayer=(finished && points.length>=3)
+        ? L.polygon(ll,{weight:4,color:"#79c7ff",fillColor:"#59b7ff",fillOpacity:.16}).addTo(acreageRealMap)
+        : L.polyline(ll,{weight:4,color:"#79c7ff",opacity:.95}).addTo(acreageRealMap);
+    }
+
+    if(currentFix){
+      const ll=[currentFix.lat,currentFix.lon];
+      const acc=Math.max(1,Number(currentFix.accuracy)||1);
+
+      if(!acreageUserMarker){
+        acreageUserMarker=L.circleMarker(ll,{
+          radius:7,weight:3,color:"#fff",fillColor:"#2b9cff",fillOpacity:1
+        }).addTo(acreageRealMap);
+      }else{
+        acreageUserMarker.setLatLng(ll);
+      }
+
+      if(!acreageAccuracyCircle){
+        acreageAccuracyCircle=L.circle(ll,{
+          radius:acc,weight:1,color:"#2b9cff",fillColor:"#2b9cff",fillOpacity:.10
+        }).addTo(acreageRealMap);
+      }else{
+        acreageAccuracyCircle.setLatLng(ll);
+        acreageAccuracyCircle.setRadius(acc);
+      }
+
+      if(!acreageMapCentered){
+        acreageRealMap.setView(ll,18);
+        acreageMapCentered=true;
+      }else if(walking){
+        acreageRealMap.panTo(ll,{animate:true,duration:.25});
+      }
+    }else if(points.length){
+      acreageRealMap.fitBounds(points.map(p=>[p.lat,p.lon]),{padding:[25,25],maxZoom:18});
+    }
+  }
+
+  acreageRealMapBtn.addEventListener("click",()=>{
+    acreageMapEnabled=!acreageMapEnabled;
+    acreageRealMapBtn.textContent="Map Overlay: "+(acreageMapEnabled?"ON":"OFF");
+    acreageRealMapBtn.classList.toggle("primary",acreageMapEnabled);
+    el("acreageLeafletMap").classList.toggle("active",acreageMapEnabled);
+
+    if(acreageMapEnabled){
+      initAcreageRealMap();
+      setTimeout(()=>{
+        if(acreageRealMap){
+          acreageRealMap.invalidateSize(true);
+          updateAcreageRealMap();
+        }
+      },120);
+    }
+  });
+
+  acreageLayerBtn.addEventListener("click",()=>{
+    initAcreageRealMap();
+    if(!acreageRealMap) return;
+
+    if(acreageSatellite){
+      if(acreageRealMap.hasLayer(acreageSatelliteLayer)) acreageRealMap.removeLayer(acreageSatelliteLayer);
+      if(!acreageRealMap.hasLayer(acreageStreetLayer)) acreageStreetLayer.addTo(acreageRealMap);
+      acreageSatellite=false;
+      acreageLayerBtn.textContent="Satellite";
+      const attr=el("acreageLeafletMap").querySelector(".map-attribution");
+      if(attr) attr.textContent="© OpenStreetMap contributors";
+    }else{
+      if(acreageRealMap.hasLayer(acreageStreetLayer)) acreageRealMap.removeLayer(acreageStreetLayer);
+      if(!acreageRealMap.hasLayer(acreageSatelliteLayer)) acreageSatelliteLayer.addTo(acreageRealMap);
+      acreageSatellite=true;
+      acreageLayerBtn.textContent="Street";
+      const attr=el("acreageLeafletMap").querySelector(".map-attribution");
+      if(attr) attr.textContent="Imagery © Esri";
+    }
+  });
 
   function localXY(p, origin){
     const R=6371008.8;
@@ -1439,6 +1688,7 @@ small, .help{color:var(--muted);line-height:1.45}
     geoBtn.disabled=points.length<3;
     saveAcreageBtn.disabled=points.length<3;
     renderPlot();
+    if(acreageMapEnabled) updateAcreageRealMap();
     if(leafletMap) refreshMapOverlays();
   }
 
