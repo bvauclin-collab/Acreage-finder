@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.4.5</title>
+<title>Acreage Finder v1.5</title>
 <style>
 :root{
   color-scheme:dark;
@@ -311,11 +311,27 @@ small, .help{color:var(--muted);line-height:1.45}
   .input-grid{grid-template-columns:1fr}
   .compass-wrap{width:215px;height:215px}
 }
+
+/* v1.5 Parcel prototype */
+.parcel-controls{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.parcel-controls button{min-height:46px;font-size:14px}
+.parcel-card{margin-top:10px;background:rgba(13,25,41,.94);border:1px solid #20344e;border-radius:16px;padding:13px}
+.parcel-card.hidden{display:none}
+.parcel-title-row{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.parcel-title{font-size:18px;font-weight:800;line-height:1.2}
+.parcel-badge{flex:0 0 auto;font-size:10px;line-height:1;padding:6px 8px;border-radius:999px;background:#27384b;color:#ffd166;text-transform:uppercase;letter-spacing:.08em}
+.parcel-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.parcel-field{background:#091624;border:1px solid #20344e;border-radius:12px;padding:9px 10px;min-width:0}
+.parcel-field .k{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.parcel-field .v{font-size:14px;font-weight:700;line-height:1.25;word-break:break-word}
+.parcel-warning{margin-top:10px;color:var(--muted);font-size:11px;line-height:1.35}
+.parcel-source{margin-top:8px;font-size:10px;color:var(--muted)}
+
 </style>
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.4.5</span></h1>
+  <h1>Acreage Finder <span class="version">v1.5</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -404,8 +420,40 @@ small, .help{color:var(--muted);line-height:1.45}
       <span><span class="legend-dot legend-saved"></span>Saved Coordinate</span>
       <span><span class="legend-line legend-boundary"></span>Walked Boundary</span>
     </div>
+    <div class="parcel-controls">
+      <button id="findParcelBtn" class="primary" type="button">Find My Parcel</button>
+      <button id="parcelLinesBtn" class="secondary" type="button">Parcel Lines: OFF</button>
+      <button id="tapParcelBtn" class="secondary" type="button">Tap Parcel: OFF</button>
+      <button id="clearParcelBtn" class="secondary" type="button">Clear Parcel</button>
+    </div>
+
+    <div id="parcelCard" class="parcel-card hidden">
+      <div class="parcel-title-row">
+        <div>
+          <div id="parcelTitle" class="parcel-title">Selected Parcel</div>
+          <div id="parcelSubtitle" class="saved-meta"></div>
+        </div>
+        <div class="parcel-badge">GIS Parcel</div>
+      </div>
+      <div class="parcel-grid">
+        <div class="parcel-field"><div class="k">Block</div><div id="parcelBlock" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">Lot</div><div id="parcelLot" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">Parcel ID</div><div id="parcelId" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">GIS Acres</div><div id="parcelAcres" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">County</div><div id="parcelCounty" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">Municipality</div><div id="parcelMunicipality" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">Land Assessment</div><div id="parcelLandValue" class="v">—</div></div>
+        <div class="parcel-field"><div class="k">Total Assessment</div><div id="parcelNetValue" class="v">—</div></div>
+      </div>
+      <div id="parcelOwnerRow" class="parcel-field" style="margin-top:8px;display:none">
+        <div class="k">Owner (if public in source)</div><div id="parcelOwner" class="v">—</div>
+      </div>
+      <div class="parcel-warning">NJ GIS parcel data is for planning/reference only and is not a survey or legal boundary determination.</div>
+      <div class="parcel-source">Source: NJ Office of GIS statewide cadastral parcel service.</div>
+    </div>
+
     <div id="mapStatus" class="status">Tap Locate Me if needed. Use the Satellite/Street button above the map to switch imagery.</div>
-    <div class="map-note2">This map is a field/navigation aid. GPS location and imagery are not survey-grade property boundaries.</div>
+    <div class="map-note2">Parcel tools in v1.5 are a New Jersey prototype. GPS acreage and coordinate navigation remain nationwide.</div>
   </section>
 
   <section id="finderView" class="view">
@@ -495,7 +543,15 @@ small, .help{color:var(--muted);line-height:1.45}
   const locateMapBtn=el("locateMapBtn"), followMapBtn=el("followMapBtn"),
         fitMapBtn=el("fitMapBtn"), mapLayerBtn=el("mapLayerBtn"), mapAttribution=el("mapAttribution"), mapGpsStatus=el("mapGpsStatus"),
         mapAccuracy=el("mapAccuracy"), mapSavedCount=el("mapSavedCount"),
-        mapStatus=el("mapStatus");
+        mapStatus=el("mapStatus"),
+        findParcelBtn=el("findParcelBtn"), parcelLinesBtn=el("parcelLinesBtn"),
+        tapParcelBtn=el("tapParcelBtn"), clearParcelBtn=el("clearParcelBtn"),
+        parcelCard=el("parcelCard"), parcelTitle=el("parcelTitle"),
+        parcelSubtitle=el("parcelSubtitle"), parcelBlock=el("parcelBlock"),
+        parcelLot=el("parcelLot"), parcelId=el("parcelId"), parcelAcres=el("parcelAcres"),
+        parcelCounty=el("parcelCounty"), parcelMunicipality=el("parcelMunicipality"),
+        parcelLandValue=el("parcelLandValue"), parcelNetValue=el("parcelNetValue"),
+        parcelOwnerRow=el("parcelOwnerRow"), parcelOwner=el("parcelOwner");
 
   function loadStore(key){
     try{
@@ -548,6 +604,10 @@ small, .help{color:var(--muted);line-height:1.45}
   let leafletMap=null, streetLayer=null, satelliteLayer=null;
   let userMarker=null, accuracyCircle=null, walkedBoundaryLayer=null, savedMarkersLayer=null;
   let mapWatchId=null, mapFollow=true, mapHasCentered=false, mapSatellite=false;
+  let parcelLinesEnabled=false, tapParcelEnabled=false;
+  let parcelOutlineLayer=null, selectedParcelLayer=null;
+  let parcelFetchController=null;
+  const NJ_PARCEL_QUERY="https://maps.nj.gov/arcgis/rest/services/Framework/Cadastral/MapServer/0/query";
 
   function initLeafletMap(){
     if(leafletMap || typeof L==="undefined") return;
@@ -560,6 +620,14 @@ small, .help{color:var(--muted);line-height:1.45}
     });
     streetLayer.addTo(leafletMap);
     savedMarkersLayer=L.layerGroup().addTo(leafletMap);
+
+    leafletMap.on("click",e=>{
+      if(tapParcelEnabled) identifyParcelAt(e.latlng.lat,e.latlng.lng,{fit:false});
+    });
+    leafletMap.on("moveend",()=>{
+      if(parcelLinesEnabled) refreshParcelLines();
+    });
+
     refreshMapOverlays();
     setTimeout(()=>leafletMap && leafletMap.invalidateSize(true),300);
   }
@@ -618,6 +686,221 @@ small, .help{color:var(--muted);line-height:1.45}
     refreshWalkedBoundary(); refreshSavedMarkers();
     const fix=getAnyCurrentFix(); if(fix) updateUserOnMap(fix,false);
   }
+
+
+  function inNewJersey(lat,lon){
+    return lat>=38.8 && lat<=41.5 && lon>=-75.7 && lon<=-73.8;
+  }
+
+  function money(v){
+    const n=Number(v);
+    if(!Number.isFinite(n) || n<=0) return "—";
+    return "$"+Math.round(n).toLocaleString();
+  }
+
+  function safeText(v){
+    return v===null || v===undefined ? "" : String(v).trim();
+  }
+
+  function arcgisPointUrl(lat,lon){
+    const p=new URLSearchParams({
+      f:"geojson",
+      geometry:`${lon},${lat}`,
+      geometryType:"esriGeometryPoint",
+      inSR:"4326",
+      spatialRel:"esriSpatialRelIntersects",
+      outFields:"PAMS_PIN,PCLBLOCK,PCLLOT,COUNTY,MUN_NAME,PROP_LOC,CALC_ACRE,LAND_VAL,IMPRVT_VAL,NET_VALUE,PROP_CLASS,OWNER_NAME",
+      returnGeometry:"true",
+      outSR:"4326"
+    });
+    return NJ_PARCEL_QUERY+"?"+p.toString();
+  }
+
+  function arcgisBoundsUrl(bounds){
+    const p=new URLSearchParams({
+      f:"geojson",
+      geometry:`${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`,
+      geometryType:"esriGeometryEnvelope",
+      inSR:"4326",
+      spatialRel:"esriSpatialRelIntersects",
+      outFields:"PAMS_PIN",
+      returnGeometry:"true",
+      outSR:"4326",
+      resultRecordCount:"300"
+    });
+    return NJ_PARCEL_QUERY+"?"+p.toString();
+  }
+
+  function parcelStyle(selected=false){
+    return selected
+      ? {color:"#ffd166",weight:5,opacity:1,fillColor:"#ffd166",fillOpacity:.13}
+      : {color:"#ff9c73",weight:2,opacity:.82,fillOpacity:0};
+  }
+
+  function showParcelDetails(feature){
+    const a=feature.properties||{};
+    const address=safeText(a.PROP_LOC);
+    const mun=safeText(a.MUN_NAME);
+    const county=safeText(a.COUNTY);
+
+    parcelTitle.textContent=address || "Selected Parcel";
+    parcelSubtitle.textContent=[mun,county && county+" County"].filter(Boolean).join(" • ");
+    parcelBlock.textContent=safeText(a.PCLBLOCK)||"—";
+    parcelLot.textContent=safeText(a.PCLLOT)||"—";
+    parcelId.textContent=safeText(a.PAMS_PIN)||"—";
+
+    const acres=Number(a.CALC_ACRE);
+    parcelAcres.textContent=Number.isFinite(acres)&&acres>0
+      ? acres.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})
+      : "—";
+
+    parcelCounty.textContent=county||"—";
+    parcelMunicipality.textContent=mun||"—";
+    parcelLandValue.textContent=money(a.LAND_VAL);
+    parcelNetValue.textContent=money(a.NET_VALUE);
+
+    const owner=safeText(a.OWNER_NAME);
+    parcelOwnerRow.style.display=owner?"block":"none";
+    parcelOwner.textContent=owner||"—";
+    parcelCard.classList.remove("hidden");
+  }
+
+  async function identifyParcelAt(lat,lon,{fit=true}={}){
+    initLeafletMap();
+    if(!inNewJersey(lat,lon)){
+      mapStatus.innerHTML='<span class="warn">This parcel prototype currently uses New Jersey parcel data. The selected location appears to be outside NJ.</span>';
+      return;
+    }
+
+    mapStatus.textContent="Looking up NJ parcel…";
+    try{
+      const res=await fetch(arcgisPointUrl(lat,lon),{cache:"no-store"});
+      if(!res.ok) throw new Error("HTTP "+res.status);
+      const data=await res.json();
+      const feature=data?.features?.[0];
+      if(!feature){
+        mapStatus.innerHTML='<span class="warn">No parcel was found at that point. Try a point farther inside the property.</span>';
+        return;
+      }
+
+      if(selectedParcelLayer){
+        leafletMap.removeLayer(selectedParcelLayer);
+        selectedParcelLayer=null;
+      }
+      selectedParcelLayer=L.geoJSON(feature,{style:parcelStyle(true)}).addTo(leafletMap);
+      showParcelDetails(feature);
+
+      if(fit){
+        const b=selectedParcelLayer.getBounds();
+        if(b.isValid()) leafletMap.fitBounds(b,{padding:[25,25],maxZoom:19});
+      }
+
+      const a=feature.properties||{};
+      const label=[
+        safeText(a.PCLBLOCK)&&"Block "+safeText(a.PCLBLOCK),
+        safeText(a.PCLLOT)&&"Lot "+safeText(a.PCLLOT)
+      ].filter(Boolean).join(" • ");
+      mapStatus.innerHTML=`Parcel selected${label?": <b>"+label+"</b>":""}.`;
+    }catch(err){
+      console.error(err);
+      mapStatus.innerHTML='<span class="bad">Could not reach the NJ parcel service. Check internet access and try again.</span>';
+    }
+  }
+
+  async function refreshParcelLines(){
+    if(!leafletMap || !parcelLinesEnabled) return;
+    if(leafletMap.getZoom()<16){
+      if(parcelOutlineLayer){leafletMap.removeLayer(parcelOutlineLayer);parcelOutlineLayer=null}
+      mapStatus.textContent="Zoom in closer to display parcel lines.";
+      return;
+    }
+
+    const c=leafletMap.getCenter();
+    if(!inNewJersey(c.lat,c.lng)){
+      if(parcelOutlineLayer){leafletMap.removeLayer(parcelOutlineLayer);parcelOutlineLayer=null}
+      mapStatus.textContent="NJ parcel lines are only available inside New Jersey in this prototype.";
+      return;
+    }
+
+    if(parcelFetchController) parcelFetchController.abort();
+    parcelFetchController=new AbortController();
+
+    try{
+      const res=await fetch(arcgisBoundsUrl(leafletMap.getBounds()),{
+        cache:"no-store",
+        signal:parcelFetchController.signal
+      });
+      if(!res.ok) throw new Error("HTTP "+res.status);
+      const data=await res.json();
+
+      if(parcelOutlineLayer){
+        leafletMap.removeLayer(parcelOutlineLayer);
+        parcelOutlineLayer=null;
+      }
+      parcelOutlineLayer=L.geoJSON(data,{style:parcelStyle(false),interactive:false}).addTo(leafletMap);
+      if(selectedParcelLayer) selectedParcelLayer.bringToFront();
+      mapStatus.textContent=`Parcel lines loaded${data.features?` (${data.features.length})`:""}.`;
+    }catch(err){
+      if(err?.name==="AbortError") return;
+      console.error(err);
+      mapStatus.innerHTML='<span class="bad">Could not load NJ parcel lines right now.</span>';
+    }
+  }
+
+  function clearSelectedParcel(){
+    if(selectedParcelLayer&&leafletMap){
+      leafletMap.removeLayer(selectedParcelLayer);
+      selectedParcelLayer=null;
+    }
+    parcelCard.classList.add("hidden");
+    mapStatus.textContent="Selected parcel cleared.";
+  }
+
+  findParcelBtn.addEventListener("click",()=>{
+    const fix=getAnyCurrentFix();
+    if(fix){
+      identifyParcelAt(fix.lat,fix.lon,{fit:true});
+      return;
+    }
+    if(!navigator.geolocation){
+      mapStatus.innerHTML='<span class="bad">Geolocation is not supported.</span>';
+      return;
+    }
+    mapStatus.textContent="Getting your GPS position…";
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const c=pos.coords;
+      currentFix={lat:c.latitude,lon:c.longitude,accuracy:c.accuracy,altitude:c.altitude,heading:c.heading,speed:c.speed};
+      updateUserOnMap(currentFix,true);
+      identifyParcelAt(c.latitude,c.longitude,{fit:true});
+    },mapPositionError,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+  });
+
+  parcelLinesBtn.addEventListener("click",()=>{
+    parcelLinesEnabled=!parcelLinesEnabled;
+    parcelLinesBtn.textContent="Parcel Lines: "+(parcelLinesEnabled?"ON":"OFF");
+    parcelLinesBtn.classList.toggle("primary",parcelLinesEnabled);
+    if(parcelLinesEnabled){
+      refreshParcelLines();
+    }else{
+      if(parcelFetchController) parcelFetchController.abort();
+      if(parcelOutlineLayer&&leafletMap){
+        leafletMap.removeLayer(parcelOutlineLayer);
+        parcelOutlineLayer=null;
+      }
+      mapStatus.textContent="Parcel lines hidden.";
+    }
+  });
+
+  tapParcelBtn.addEventListener("click",()=>{
+    tapParcelEnabled=!tapParcelEnabled;
+    tapParcelBtn.textContent="Tap Parcel: "+(tapParcelEnabled?"ON":"OFF");
+    tapParcelBtn.classList.toggle("primary",tapParcelEnabled);
+    mapStatus.textContent=tapParcelEnabled
+      ? "Tap anywhere inside a New Jersey parcel to identify it."
+      : "Tap-to-identify parcel mode is off.";
+  });
+
+  clearParcelBtn.addEventListener("click",clearSelectedParcel);
 
   function mapPositionSuccess(pos){
     const c=pos.coords;
