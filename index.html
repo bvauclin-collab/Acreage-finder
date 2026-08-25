@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.6</title>
+<title>Acreage Finder v1.7</title>
 <style>
 :root{
   color-scheme:dark;
@@ -331,7 +331,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.6</span></h1>
+  <h1>Acreage Finder <span class="version">v1.7</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -455,7 +455,7 @@ small, .help{color:var(--muted);line-height:1.45}
     </div>
 
     <div id="mapStatus" class="status">Tap Locate Me if needed. Use the Satellite/Street button above the map to switch imagery.</div>
-    <div class="map-note2">Free parcel engine v1.6 currently supports New Jersey and North Carolina. GPS acreage and coordinate navigation remain nationwide.</div>
+    <div class="map-note2">Free parcel engine v1.7 currently supports New Jersey, North Carolina, and Tennessee. GPS acreage and coordinate navigation remain nationwide.</div>
   </section>
 
   <section id="finderView" class="view">
@@ -626,6 +626,14 @@ small, .help{color:var(--muted);line-height:1.45}
       bounds:{south:33.75,north:36.7,west:-84.4,east:-75.3},
       query:"https://services.nconemap.gov/secure/rest/services/NC1Map_Parcels/FeatureServer/1/query",
       outFields:"parno,altparno,ownname,landval,improvval,parval,siteadd,scity,gisacres,cntyname,stname,nparno,mapref"
+    },
+    {
+      id:"TN",
+      name:"Tennessee Comptroller GIS",
+      state:"Tennessee",
+      bounds:{south:34.98,north:36.70,west:-90.32,east:-81.64},
+      query:"https://tnmap.tn.gov/arcgis/rest/services/PROPERTY/Parcels/MapServer/0/query",
+      outFields:"*"
     }
   ];
 
@@ -746,7 +754,7 @@ small, .help{color:var(--muted);line-height:1.45}
       geometryType:"esriGeometryEnvelope",
       inSR:"4326",
       spatialRel:"esriSpatialRelIntersects",
-      outFields:provider.id==="NJ" ? "PAMS_PIN" : "parno",
+      outFields:provider.id==="NJ" ? "PAMS_PIN" : provider.id==="NC" ? "parno" : "*",
       returnGeometry:"true",
       outSR:"4326",
       resultRecordCount:"300"
@@ -788,6 +796,30 @@ small, .help{color:var(--muted);line-height:1.45}
         provider:provider.name
       };
     }
+    if(provider.id==="TN"){
+      const pick=(...keys)=>{
+        for(const k of keys){
+          if(a[k]!==undefined && a[k]!==null && String(a[k]).trim()!=="") return a[k];
+          const found=Object.keys(a).find(x=>x.toLowerCase()===String(k).toLowerCase());
+          if(found && a[found]!==undefined && a[found]!==null && String(a[found]).trim()!=="") return a[found];
+        }
+        return "";
+      };
+      return {
+        state:"Tennessee",
+        address:safeText(pick("SITEADDR","SITE_ADDR","PROPERTY_ADDRESS","ADDRESS","PROPADDR","SITUS")),
+        city:safeText(pick("CITY","SITUSCITY","SITE_CITY","PROP_CITY")),
+        county:safeText(pick("COUNTY","COUNTYNAME","COUNTY_NAME")),
+        block:safeText(pick("BLOCK")),
+        lot:safeText(pick("LOT")),
+        parcelId:safeText(pick("PARCELID","PARCEL_ID","PARCEL","MAPPARCEL","PIN","APN")),
+        acres:Number(pick("ACRES","GISACRES","GIS_ACRES","CALC_ACRE")),
+        landValue:Number(pick("LANDVALUE","LAND_VALUE","LANDVAL","LAND_VAL")),
+        totalValue:Number(pick("TOTALVALUE","TOTAL_VALUE","TOTALVAL","APPRAISED","ASSESSED")),
+        owner:safeText(pick("OWNER","OWNERNAME","OWNER_NAME")),
+        provider:provider.name
+      };
+    }
     return null;
   }
 
@@ -826,7 +858,7 @@ small, .help{color:var(--muted);line-height:1.45}
     initLeafletMap();
     const provider=providerForPoint(lat,lon);
     if(!provider){
-      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.6 currently supports New Jersey and North Carolina. GPS acreage tools still work here.</span>';
+      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.7 currently supports New Jersey, North Carolina, and Tennessee. GPS acreage tools still work here.</span>';
       return;
     }
 
