@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.4.2</title>
+<title>Acreage Finder v1.4.3</title>
 <style>
 :root{
   color-scheme:dark;
@@ -234,6 +234,40 @@ small, .help{color:var(--muted);line-height:1.45}
 .leaflet-grab{cursor:grab}
 .leaflet-dragging .leaflet-grab{cursor:grabbing}
 
+
+/* v1.4.3 — remove persistent Leaflet overlay rectangle */
+#leafletMap canvas.leaflet-zoom-animated,
+#leafletMap .leaflet-overlay-pane canvas,
+#leafletMap canvas.leaflet-layer{
+  position:absolute !important;
+  left:0 !important;
+  top:0 !important;
+  background:transparent !important;
+  background-color:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+  opacity:1 !important;
+  max-width:none !important;
+  max-height:none !important;
+}
+#leafletMap .leaflet-overlay-pane{
+  background:transparent !important;
+  pointer-events:none;
+}
+#leafletMap .leaflet-overlay-pane canvas{
+  pointer-events:auto;
+}
+#leafletMap .leaflet-control-attribution{
+  width:auto !important;
+  height:auto !important;
+  min-width:0 !important;
+  min-height:0 !important;
+  max-width:75% !important;
+  background:rgba(255,255,255,.78) !important;
+  padding:2px 5px !important;
+  border-radius:4px 0 0 0;
+}
+
 /* Interactive map */
 #leafletMap{width:100%;height:58vh;min-height:390px;max-height:720px;border-radius:18px;overflow:hidden;border:1px solid #20344e;background:#081523}
 .map-toolbar{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px}
@@ -257,7 +291,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.4.2</span></h1>
+  <h1>Acreage Finder <span class="version">v1.4.3</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -491,7 +525,7 @@ small, .help{color:var(--muted);line-height:1.45}
 
   function initLeafletMap(){
     if(leafletMap || typeof L==="undefined") return;
-    leafletMap=L.map("leafletMap",{preferCanvas:true}).setView([39.5,-98.35],4);
+    leafletMap=L.map("leafletMap",{preferCanvas:false}).setView([39.5,-98.35],4);
     streetLayer=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
       maxZoom:19, attribution:"&copy; OpenStreetMap contributors"
     });
