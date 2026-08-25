@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
-<title>Acreage Finder v1.9.1</title>
+<title>Acreage Finder v1.9.2</title>
 <style>
 :root{
   color-scheme:dark;
@@ -331,7 +331,7 @@ small, .help{color:var(--muted);line-height:1.45}
 </head>
 <body>
 <main>
-  <h1>Acreage Finder <span class="version">v1.9.1</span></h1>
+  <h1>Acreage Finder <span class="version">v1.9.2</span></h1>
   <div class="subtitle">GPS acreage measurement + coordinate finder.</div>
 
   <section class="mode-tabs" aria-label="App mode" style="grid-template-columns:repeat(3,1fr)">
@@ -455,7 +455,7 @@ small, .help{color:var(--muted);line-height:1.45}
     </div>
 
     <div id="mapStatus" class="status">Tap Locate Me if needed. Use the Satellite/Street button above the map to switch imagery.</div>
-    <div class="map-note2">Free parcel engine v1.9.1 supports New Jersey, North Carolina, Tennessee, Virginia, Pennsylvania, Maryland, and Delaware. GPS acreage and coordinate navigation remain nationwide.</div>
+    <div class="map-note2">Free parcel engine v1.9.2 supports New Jersey, North Carolina, Tennessee, Virginia, Pennsylvania, Maryland, and Delaware. GPS acreage and coordinate navigation remain nationwide.</div>
   </section>
 
   <section id="finderView" class="view">
@@ -790,11 +790,22 @@ small, .help{color:var(--muted);line-height:1.45}
   }
 
 
-  function providerForPoint(lat,lon){
-    return PARCEL_PROVIDERS.find(p=>
+  function providersForPoint(lat,lon){
+    return PARCEL_PROVIDERS.filter(p=>
       lat>=p.bounds.south && lat<=p.bounds.north &&
       lon>=p.bounds.west && lon<=p.bounds.east
-    ) || null;
+    ).sort((a,b)=>{
+      // Prefer smaller/more-specific coverage boxes first.
+      // This keeps county-specific TN sources ahead of statewide sources
+      // and reduces false state matches near borders.
+      const areaA=(a.bounds.north-a.bounds.south)*(a.bounds.east-a.bounds.west);
+      const areaB=(b.bounds.north-b.bounds.south)*(b.bounds.east-b.bounds.west);
+      return areaA-areaB;
+    });
+  }
+
+  function providerForPoint(lat,lon){
+    return providersForPoint(lat,lon)[0] || null;
   }
 
   function money(v){
@@ -1070,84 +1081,131 @@ small, .help{color:var(--muted);line-height:1.45}
 
   async function identifyParcelAt(lat,lon,{fit=true}={}){
     initLeafletMap();
-    const provider=providerForPoint(lat,lon);
-    if(!provider){
-      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this state yet. v1.9.1 currently supports New Jersey, North Carolina, Tennessee, Virginia, Pennsylvania, Maryland, and Delaware. GPS acreage tools still work here.</span>';
+    const candidates=providersForPoint(lat,lon);
+
+    if(!candidates.length){
+      mapStatus.innerHTML='<span class="warn">Free parcel data is not configured for this location yet. GPS acreage tools still work here.</span>';
       return;
     }
 
-    mapStatus.textContent=`Looking up parcel via ${provider.name}…`;
-    try{
-      const res=await fetch(parcelPointUrl(provider,lat,lon),{cache:"no-store"});
-      if(!res.ok) throw new Error("HTTP "+res.status);
-      const raw=await res.json();
-      const data=arcgisDataToGeoJSON(provider,raw);
-      const feature=data?.features?.[0];
-      if(!feature){
-        mapStatus.innerHTML=`<span class="warn">No ${provider.state} parcel was found at that point. Try a point farther inside the property.</span>`;
+    let lastError=null;
+
+    for(const provider of candidates){
+      mapStatus.textContent=`Looking up parcel via ${provider.name}…`;
+
+      try{
+        const res=await fetch(parcelPointUrl(provider,lat,lon),{cache:"no-store"});
+        if(!res.ok){
+          lastError=new Error("HTTP "+res.status);
+          continue;
+        }
+
+        const raw=await res.json();
+        const data=arcgisDataToGeoJSON(provider,raw);
+        const feature=data?.features?.[0];
+
+        if(!feature){
+          continue;
+        }
+
+        if(selectedParcelLayer){
+          leafletMap.removeLayer(selectedParcelLayer);
+          selectedParcelLayer=null;
+        }
+
+        selectedParcelLayer=L.geoJSON(feature,{style:parcelStyle(true)}).addTo(leafletMap);
+        showParcelDetails(provider,feature);
+
+        if(fit){
+          const b=selectedParcelLayer.getBounds();
+          if(b.isValid()) leafletMap.fitBounds(b,{padding:[25,25],maxZoom:19});
+        }
+
+        const p=normalizeParcel(provider,feature);
+        mapStatus.innerHTML=`Parcel selected via <b>${provider.name}</b>${p?.parcelId?": "+p.parcelId:""}.`;
         return;
+      }catch(err){
+        console.error(provider.name,err);
+        lastError=err;
       }
+    }
 
-      if(selectedParcelLayer){
-        leafletMap.removeLayer(selectedParcelLayer);
-        selectedParcelLayer=null;
-      }
-      selectedParcelLayer=L.geoJSON(feature,{style:parcelStyle(true)}).addTo(leafletMap);
-      showParcelDetails(provider,feature);
-
-      if(fit){
-        const b=selectedParcelLayer.getBounds();
-        if(b.isValid()) leafletMap.fitBounds(b,{padding:[25,25],maxZoom:19});
-      }
-
-      const p=normalizeParcel(provider,feature);
-      mapStatus.innerHTML=`Parcel selected via <b>${provider.name}</b>${p?.parcelId?": "+p.parcelId:""}.`;
-    }catch(err){
-      console.error(err);
-      mapStatus.innerHTML=`<span class="bad">Could not reach ${provider.name}. Check internet access and try again.</span>`;
+    if(lastError){
+      mapStatus.innerHTML='<span class="bad">No working parcel source returned a parcel at that point. Try again or tap farther inside the property.</span>';
+    }else{
+      const names=candidates.map(p=>p.state).filter((v,i,a)=>a.indexOf(v)===i).join(" / ");
+      mapStatus.innerHTML=`<span class="warn">No parcel was found at that point using ${names} public parcel sources. Try a point farther inside the property.</span>`;
     }
   }
 
   async function refreshParcelLines(){
     if(!leafletMap || !parcelLinesEnabled) return;
+
     if(leafletMap.getZoom()<16){
-      if(parcelOutlineLayer){leafletMap.removeLayer(parcelOutlineLayer);parcelOutlineLayer=null}
+      if(parcelOutlineLayer){
+        leafletMap.removeLayer(parcelOutlineLayer);
+        parcelOutlineLayer=null;
+      }
       mapStatus.textContent="Zoom in closer to display parcel lines.";
       return;
     }
 
     const c=leafletMap.getCenter();
-    const provider=providerForPoint(c.lat,c.lng);
-    if(!provider){
-      if(parcelOutlineLayer){leafletMap.removeLayer(parcelOutlineLayer);parcelOutlineLayer=null}
-      mapStatus.textContent="Free parcel lines are not configured for this state yet.";
+    const candidates=providersForPoint(c.lat,c.lng);
+
+    if(!candidates.length){
+      if(parcelOutlineLayer){
+        leafletMap.removeLayer(parcelOutlineLayer);
+        parcelOutlineLayer=null;
+      }
+      mapStatus.textContent="Free parcel lines are not configured for this location yet.";
       return;
     }
 
     if(parcelFetchController) parcelFetchController.abort();
     parcelFetchController=new AbortController();
 
-    try{
-      const res=await fetch(parcelBoundsUrl(provider,leafletMap.getBounds()),{
-        cache:"no-store",
-        signal:parcelFetchController.signal
-      });
-      if(!res.ok) throw new Error("HTTP "+res.status);
-      const raw=await res.json();
-      const data=arcgisDataToGeoJSON(provider,raw);
+    for(const provider of candidates){
+      try{
+        const res=await fetch(parcelBoundsUrl(provider,leafletMap.getBounds()),{
+          cache:"no-store",
+          signal:parcelFetchController.signal
+        });
 
-      if(parcelOutlineLayer){
-        leafletMap.removeLayer(parcelOutlineLayer);
-        parcelOutlineLayer=null;
+        if(!res.ok) continue;
+
+        const raw=await res.json();
+        const data=arcgisDataToGeoJSON(provider,raw);
+
+        if(!data?.features?.length){
+          continue;
+        }
+
+        if(parcelOutlineLayer){
+          leafletMap.removeLayer(parcelOutlineLayer);
+          parcelOutlineLayer=null;
+        }
+
+        parcelOutlineLayer=L.geoJSON(data,{
+          style:parcelStyle(false),
+          interactive:false
+        }).addTo(leafletMap);
+
+        if(selectedParcelLayer) selectedParcelLayer.bringToFront();
+
+        mapStatus.textContent=`Parcel lines loaded via ${provider.name} (${data.features.length}).`;
+        return;
+      }catch(err){
+        if(err?.name==="AbortError") return;
+        console.error(provider.name,err);
       }
-      parcelOutlineLayer=L.geoJSON(data,{style:parcelStyle(false),interactive:false}).addTo(leafletMap);
-      if(selectedParcelLayer) selectedParcelLayer.bringToFront();
-      mapStatus.textContent=`${provider.state} parcel lines loaded via ${provider.name}${data.features?` (${data.features.length})`:""}.`;
-    }catch(err){
-      if(err?.name==="AbortError") return;
-      console.error(err);
-      mapStatus.innerHTML=`<span class="bad">Could not load parcel lines from ${provider.name} right now.</span>`;
     }
+
+    if(parcelOutlineLayer){
+      leafletMap.removeLayer(parcelOutlineLayer);
+      parcelOutlineLayer=null;
+    }
+    mapStatus.innerHTML='<span class="warn">No parcel lines were returned for the current map area.</span>';
   }
 
   function clearSelectedParcel(){
